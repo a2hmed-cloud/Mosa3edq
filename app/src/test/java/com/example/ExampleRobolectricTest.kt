@@ -112,6 +112,25 @@ class ExampleRobolectricTest {
         val normalized = com.example.ai.IntentClassifier.normalizeArabic("إرْسَالْ الأَلْفِ وَالْيَاءِ أَىْ")
         assertEquals("ارسال الالف والياء اي", normalized)
     }
+
+    @Test
+    fun `test cleanModelOutput strips think tags and extracts json`() {
+        val raw = """
+            <think>
+            The user wants to open whatsapp.
+            </think>
+            ```json
+            {"action": "launch_app", "packageName": "com.whatsapp"}
+            ```
+        """.trimIndent()
+
+        val cleaned = com.example.ai.GeminiApiClient.cleanModelOutput(raw)
+        assertEquals("""{"action": "launch_app", "packageName": "com.whatsapp"}""", cleaned)
+
+        val action = AgentAction.fromJson(raw)
+        assertTrue(action is AgentAction.LaunchApp)
+    }
 }
+
 
 

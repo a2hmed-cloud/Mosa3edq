@@ -70,8 +70,20 @@ class IntentClassifier(private val geminiApiClient: GeminiApiClient) {
         return response.fold(
             onSuccess = { jsonStr ->
                 try {
-                    val cleanJson = jsonStr.substringAfter("{").substringBeforeLast("}").let { "{$it}" }
+                    val cleaned = GeminiApiClient.cleanModelOutput(jsonStr)
+                    val cleanJson = if (cleaned.startsWith("{") && cleaned.endsWith("}")) {
+                        cleaned
+                    } else {
+                        val firstBrace = cleaned.indexOf('{')
+                        val lastBrace = cleaned.lastIndexOf('}')
+                        if (firstBrace != -1 && lastBrace > firstBrace) {
+                            cleaned.substring(firstBrace, lastBrace + 1)
+                        } else {
+                            cleaned
+                        }
+                    }
                     val json = JSONObject(cleanJson)
+
                     val typeStr = json.optString("type", "DEVICE_ACTION")
                     val type = if (typeStr.equals("CONVERSATION", ignoreCase = true)) {
                         IntentType.CONVERSATION

@@ -32,9 +32,21 @@ sealed class AgentAction {
     companion object {
         fun fromJson(jsonStr: String): AgentAction? {
             return try {
-                val clean = jsonStr.substringAfter("{").substringBeforeLast("}").let { "{$it}" }
+                val cleanedInput = com.example.ai.GeminiApiClient.cleanModelOutput(jsonStr)
+                val clean = if (cleanedInput.startsWith("{") && cleanedInput.endsWith("}")) {
+                    cleanedInput
+                } else {
+                    val firstBrace = cleanedInput.indexOf('{')
+                    val lastBrace = cleanedInput.lastIndexOf('}')
+                    if (firstBrace != -1 && lastBrace > firstBrace) {
+                        cleanedInput.substring(firstBrace, lastBrace + 1)
+                    } else {
+                        cleanedInput
+                    }
+                }
                 val json = JSONObject(clean)
                 val toolName = json.optString("action", json.optString("tool", ""))
+
 
                 fun optNullableString(key: String): String? {
                     return if (json.has(key) && !json.isNull(key)) {

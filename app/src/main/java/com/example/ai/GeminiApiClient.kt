@@ -20,9 +20,9 @@ class GeminiApiClient(
     private var customBaseUrlSupplier: (() -> String)? = null
 ) {
     private val client = OkHttpClient.Builder()
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
         .build()
 
     private fun getEffectiveApiKey(): String {
@@ -108,11 +108,12 @@ class GeminiApiClient(
             rootJson.put("contents", contentsArray)
 
             // Generation config
+            val genConfig = JSONObject()
+            genConfig.put("maxOutputTokens", 4096)
             if (jsonSchemaResponse) {
-                val genConfig = JSONObject()
                 genConfig.put("responseMimeType", "application/json")
-                rootJson.put("generationConfig", genConfig)
             }
+            rootJson.put("generationConfig", genConfig)
 
             val cleanModel = if (modelName.startsWith("models/")) modelName.removePrefix("models/") else modelName
             val url = "https://generativelanguage.googleapis.com/v1beta/models/$cleanModel:generateContent?key=$apiKey"
@@ -147,7 +148,7 @@ class GeminiApiClient(
                 return@withContext Result.failure(Exception("وصل رد فارغ من النموذج."))
             }
 
-            Result.success(text)
+            Result.success(cleanModelOutput(text))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -158,7 +159,8 @@ class GeminiApiClient(
         systemInstruction: String?,
         screenshotBitmap: Bitmap?,
         jsonSchemaResponse: Boolean,
-        modelName: String
+        modelName: String,
+        allowResponseFormatRetry: Boolean = true
     ): Result<String> = withContext(Dispatchers.IO) {
         val apiKey = getEffectiveApiKey()
         var baseUrl = getEffectiveBaseUrl().trimEnd('/')
@@ -176,6 +178,7 @@ class GeminiApiClient(
         try {
             val rootJson = JSONObject()
             rootJson.put("model", modelName)
+            rootJson.put("max_tokens", 4096)
 
             val messagesArray = JSONArray()
 
@@ -208,7 +211,7 @@ class GeminiApiClient(
             messagesArray.put(userMsg)
             rootJson.put("messages", messagesArray)
 
-            if (jsonSchemaResponse) {
+            if (jsonSchemaResponse && allowResponseFormatRetry) {
                 rootJson.put("response_format", JSONObject().put("type", "json_object"))
             }
 
@@ -224,6 +227,18 @@ class GeminiApiClient(
             val responseStr = response.body?.string() ?: ""
 
             if (!response.isSuccessful) {
+                // If response_format caused HTTP 400 or 422, retry without response_format
+                if ((response.code == 400 || response.code == 422) && jsonSchemaResponse && allowResponseFormatRetry) {
+                    return@withContext generateOpenAiResponse(
+                        prompt = prompt,
+                        systemInstruction = systemInstruction,
+                        screenshotBitmap = screenshotBitmap,
+                        jsonSchemaResponse = jsonSchemaResponse,
+                        modelName = modelName,
+                        allowResponseFormatRetry = false
+                    )
+                }
+
                 return@withContext Result.failure(
                     Exception("خطأ من المزوّد (${response.code}): $responseStr")
                 )
@@ -237,17 +252,37 @@ class GeminiApiClient(
 
             val firstChoice = choices.getJSONObject(0)
             val messageObj = firstChoice.optJSONObject("message")
-            val text = messageObj?.optString("content")
+            var text = messageObj?.optString("content")
 
-            if (text.isNullOrBlank()) {
+            // Fallback for reasoning models (DeepSeek-R1 / Qwen-Thinking)
+            if (text.isNullOrBlank() || text == "null") {
+                text = messageObj?.optString("reasoning_content")
+            }
+
+            if (text.isNullOrBlank() || text == "null") {
                 return@withContext Result.failure(Exception("وصل رد فارغ من المزوّد."))
             }
 
-            Result.success(text)
+            Result.success(cleanModelOutput(text))
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
+
+    companion object {
+        fun cleanModelOutput(raw: String): String {
+            if (raw.isBlank()) return raw
+            var text = raw.replace(Regex("(?s)<think>.*?</think>"), "").trim()
+
+            val jsonCodeBlock = Regex("(?s)```(?:json)?\\s*(\\{.*?\\}|\\[.*?\\])\\s*```").find(text)?.groupValues?.get(1)
+            if (jsonCodeBlock != null) {
+                return jsonCodeBlock.trim()
+            }
+
+            return text
+        }
+    }
+
 
     suspend fun fetchAvailableModels(
         provider: String,

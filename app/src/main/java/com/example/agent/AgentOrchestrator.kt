@@ -437,11 +437,22 @@ class AgentOrchestrator(
         }
     }
 
+    private fun extractTargetAppName(goal: String): String {
+        val clean = goal.replace("افتح", "").replace("تطبيق", "").replace("شغل", "").trim()
+        val knownApps = listOf("واتساب", "واتس", "يوتيوب", "الإعدادات", "اعدادات", "سبوتيفاي", "تليجرام", "فيسبوك", "انستجرام", "كاميرا", "هاتف", "الاستوديو", "متجر", "كروم", "خرائط")
+        val words = clean.split(" ", "،", ",", ".", "!")
+        for (w in words) {
+            val match = knownApps.firstOrNull { w.lowercase().contains(it) }
+            if (match != null) return match
+        }
+        return words.firstOrNull { it.isNotBlank() } ?: clean
+    }
+
     private fun inferFallbackAction(goal: String): AgentAction {
         val lower = goal.lowercase()
         return when {
             lower.contains("افتح") || lower.contains("تطبيق") -> {
-                val appName = goal.replace("افتح", "").replace("تطبيق", "").trim()
+                val appName = extractTargetAppName(goal)
                 AgentAction.LaunchApp(appName, appName)
             }
             lower.contains("شغل") || lower.contains("أغنية") || lower.contains("موسيقى") || lower.contains("سبوتيفاي") -> {
@@ -469,6 +480,8 @@ class AgentOrchestrator(
             else -> AgentAction.FinishTask("تم تنفيذ طلبك: $goal بنجاح.")
         }
     }
+
+
 
     private fun captureCurrentScreenMetadata(): String {
         val service = YaMosaedAccessibilityService.getInstance() ?: return "خدمة إمكانية الوصول غير مفعلة حالياً."
