@@ -79,8 +79,11 @@ class YaMosaedAccessibilityService : AccessibilityService() {
         }
     }
 
-    fun clickByText(targetText: String): Boolean {
+    fun clickByTextOrDescription(targetText: String): Boolean {
         val rootNode = rootInActiveWindow ?: return false
+        val cleanTarget = normalizeArabicText(targetText)
+
+        // 1. Direct system match
         val matchingNodes = rootNode.findAccessibilityNodeInfosByText(targetText)
         if (!matchingNodes.isNullOrEmpty()) {
             for (node in matchingNodes) {
@@ -89,7 +92,32 @@ class YaMosaedAccessibilityService : AccessibilityService() {
                 }
             }
         }
+
+        // 2. Traversal match for contentDescription or viewId or normalized text
+        val foundNode = findNodeMatchingText(rootNode, cleanTarget)
+        if (foundNode != null) {
+            return performClickOnNodeOrParent(foundNode)
+        }
+
         return false
+    }
+
+    private fun findNodeMatchingText(node: AccessibilityNodeInfo?, target: String): AccessibilityNodeInfo? {
+        if (node == null) return null
+
+        val nodeText = normalizeArabicText(node.text?.toString() ?: "")
+        val descText = normalizeArabicText(node.contentDescription?.toString() ?: "")
+        val viewId = (node.viewIdResourceName ?: "").lowercase()
+
+        if ((nodeText.contains(target) || descText.contains(target) || viewId.contains(target)) && target.isNotBlank()) {
+            return node
+        }
+
+        for (i in 0 until node.childCount) {
+            val res = findNodeMatchingText(node.getChild(i), target)
+            if (res != null) return res
+        }
+        return null
     }
 
     fun clickByViewId(viewIdResource: String): Boolean {
@@ -188,5 +216,15 @@ class YaMosaedAccessibilityService : AccessibilityService() {
 
     fun performGlobalHomeAction(): Boolean {
         return performGlobalAction(GLOBAL_ACTION_HOME)
+    }
+
+    private fun normalizeArabicText(input: String): String {
+        return input.lowercase()
+            .replace('أ', 'ا')
+            .replace('إ', 'ا')
+            .replace('آ', 'ا')
+            .replace('ة', 'ه')
+            .replace('ى', 'ي')
+            .trim()
     }
 }

@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.AlarmClock
+import android.provider.MediaStore
+import android.provider.Settings
 import com.example.accessibility.YaMosaedAccessibilityService
 import com.example.ai.ClassificationResult
 import com.example.ai.GeminiApiClient
@@ -60,11 +62,11 @@ class AgentOrchestrator(
     val lastSummary: StateFlow<String> = _lastSummary
 
     private val toolSystemInstruction = """
-        أنت المساعد الذكي "يا مساعد" للتحكم بهاتف أندرويد.
-        عندما يطلب المستخدم حجة على الهاتف، اختر أداة واحدة فقط في كل خطوة بتنسيق JSON:
+        أنت المساعد الذكي "يا مساعد" للتحكم بهاتف أندرويد وتأدية المهام.
+        عندما يطلب المستخدم إجراءً على الهاتف، حدد الإجراء بدقة بتنسيق JSON:
         {
           "action": "اسم_الأداة",
-          "packageName": "اسم_الحزمة",
+          "packageName": "اسم_التطبيق_أو_الحزمة",
           "text": "النص",
           "viewId": "معرف_العنصر",
           "hour": 8, "minute": 0, "seconds": 60,
@@ -75,12 +77,13 @@ class AgentOrchestrator(
           "title": "عنوان_المهمة",
           "summary": "ملخص_التنفيذ"
         }
+
         الأدوات المتاحة:
-        - launch_app (مع packageName مثل com.spotify.music)
+        - launch_app (مثل packageName: "whatsapp", "settings", "youtube", "com.spotify.music")
         - read_screen
         - capture_screen
-        - click_element (مع text أو viewId)
-        - enter_text (مع text)
+        - click_element (text: النص المطلوب الضغط عليه مثل "إرسال", "بحث", "موافق")
+        - enter_text (text: النص المراد كتابته)
         - scroll (direction: "down" أو "up")
         - press_back
         - press_home
@@ -103,7 +106,7 @@ class AgentOrchestrator(
             val classification = intentClassifier.classify(trimmed)
 
             if (classification.type == IntentType.CONVERSATION) {
-                val replyText = classification.directReply ?: "تحت أمرك، قول لي أعمل لك إيه؟"
+                val replyText = classification.directReply ?: "تحت أمرك، قول لي حابب نعمل إيه بالنسبة للتطبيقات أو الهاتف؟"
                 _agentState.value = AgentState.Speaking(replyText)
                 _lastSummary.value = replyText
                 speechController.speak(replyText)
@@ -122,6 +125,7 @@ class AgentOrchestrator(
         val maxSteps = 8
         var isFinished = false
         var executionSummary = ""
+        var previousActionName = ""
 
         while (stepCount < maxSteps && !isFinished) {
             stepCount++
@@ -129,10 +133,10 @@ class AgentOrchestrator(
 
             val screenSnapshotText = captureCurrentScreenMetadata()
             val prompt = """
-                الهدف: "$goal"
-                معلومات الشاشة الحالية: $screenSnapshotText
-                الخطوة الحالية: $stepCount من $maxSteps.
-                حدد الإجراء التالي بتنسيق JSON.
+                الهدف الحالي للمستخدم: "$goal"
+                محتوى عناصر الشاشة الحالية: $screenSnapshotText
+                الخطوة رقم: $stepCount من $maxSteps.
+                حدد الإجراء القادم بدقة بتنسيق JSON.
             """.trimIndent()
 
             val geminiResponse = geminiApiClient.generateResponse(
@@ -146,27 +150,30 @@ class AgentOrchestrator(
                 onFailure = { null }
             )
 
-            if (action == null) {
-                val fallbackAction = inferFallbackAction(goal)
-                _agentState.value = AgentState.Executing(fallbackAction.javaClass.simpleName)
-                val summary = executeSingleAction(fallbackAction)
-                executionSummary = summary
+            val currentAction = action ?: inferFallbackAction(goal)
+            val currentActionName = currentAction.javaClass.simpleName
+
+            // Prevent infinite identical action loops
+            if (currentActionName == previousActionName && stepCount > 2) {
+                executionSummary = "تم إيقاف التكرار التلقائي للإجراء. يرجى التحقق من فتح التطبيق المطلوب."
                 isFinished = true
-            } else {
-                _agentState.value = AgentState.Executing(action.javaClass.simpleName)
-                val summary = executeSingleAction(action)
-                executionSummary = summary
+                break
+            }
+            previousActionName = currentActionName
 
-                _agentState.value = AgentState.Verifying
+            _agentState.value = AgentState.Executing(currentActionName)
+            val summary = executeSingleAction(currentAction)
+            executionSummary = summary
 
-                if (action is AgentAction.FinishTask || action is AgentAction.Reply || action is AgentAction.GetWeather || action is AgentAction.SetAlarm || action is AgentAction.SetTimer) {
-                    isFinished = true
-                }
+            _agentState.value = AgentState.Verifying
+
+            if (currentAction is AgentAction.FinishTask || currentAction is AgentAction.Reply || currentAction is AgentAction.GetWeather || currentAction is AgentAction.SetAlarm || currentAction is AgentAction.SetTimer || currentAction is AgentAction.LaunchApp || currentAction is AgentAction.MapsSearch) {
+                isFinished = true
             }
         }
 
         if (executionSummary.isBlank()) {
-            executionSummary = "تم تنفيذ طلبك: $goal بنجاح."
+            executionSummary = "تم تنفيذ الإجراء المطلوب لـ: $goal."
         }
 
         _agentState.value = AgentState.Speaking(executionSummary)
@@ -179,14 +186,7 @@ class AgentOrchestrator(
     private suspend fun executeSingleAction(action: AgentAction): String = withContext(Dispatchers.Main) {
         when (action) {
             is AgentAction.LaunchApp -> {
-                val intent = context.packageManager.getLaunchIntentForPackage(action.packageName)
-                if (intent != null) {
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                    "تم فتح التطبيق: ${action.appName}"
-                } else {
-                    "عفواً، التطبيق غير مثبت على الهاتف."
-                }
+                resolveAndLaunchApp(action.packageName.ifBlank { action.appName })
             }
             is AgentAction.SpotifyControl -> {
                 when (action.action) {
@@ -200,20 +200,20 @@ class AgentOrchestrator(
                         try {
                             context.startActivity(spotifyIntent)
                             val service = YaMosaedAccessibilityService.getInstance()
-                            service?.clickByText(query)
+                            service?.clickByTextOrDescription(query)
                             "جاري تشغيل \"$query\" على سبوتيفاي"
                         } catch (e: Exception) {
                             val webSearch = Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/search/" + Uri.encode(query))).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             context.startActivity(webSearch)
-                            "تم البحث عن \"$query\" في سبوتيفاي"
+                            "تم فتح البحث عن \"$query\" في سبوتيفاي"
                         }
                     }
                     else -> {
                         val service = YaMosaedAccessibilityService.getInstance()
-                        service?.clickByText("Play") ?: service?.clickByText("تشغيل")
-                        "تم التفاعل مع تشغيل سبوتيفاي"
+                        val success = service?.clickByTextOrDescription("Play") ?: service?.clickByTextOrDescription("تشغيل") ?: false
+                        if (success) "تم التفاعل مع تشغيل سبوتيفاي بنجاح." else "تعذر التفاعل المباشر مع سبوتيفاي، يرجى التأكد من فتح التطبيق."
                     }
                 }
             }
@@ -257,7 +257,7 @@ class AgentOrchestrator(
                 )
                 val triggerAt = System.currentTimeMillis() + (action.seconds * 1000L)
                 alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
-                "تم إيقاف المؤقت لمدة ${action.seconds} ثانية."
+                "تم تشغيل المؤقت لمدة ${action.seconds} ثانية بنجاح."
             }
             is AgentAction.ManageTasks -> {
                 if (action.action == "add" && !action.title.isNullOrBlank()) {
@@ -289,40 +289,77 @@ class AgentOrchestrator(
             }
             is AgentAction.ReadScreen -> {
                 val service = YaMosaedAccessibilityService.getInstance()
-                val nodes = service?.captureScreenContentSnapshot() ?: emptyList()
-                val sampleTexts = nodes.take(5).joinToString(", ") { it.text }
-                if (sampleTexts.isNotBlank()) "المحتوى المباشر للشاشة: $sampleTexts" else "الشاشة تحتوي على عناصر تفاعلية جاهزة للأوامر."
+                if (service == null) {
+                    "خدمة إمكانية الوصول (Accessibility) غير مفعلة. يرجى فتح شاشة الأذونات وتفعيل الخدمة لقراءة الشاشة."
+                } else {
+                    val nodes = service.captureScreenContentSnapshot()
+                    if (nodes.isEmpty()) {
+                        "الشاشة الحالية لا تحتوي على عناصر نصية يمكن قراءتها عبر خدمة إمكانية الوصول."
+                    } else {
+                        val sampleTexts = nodes.take(8).joinToString(", ") { it.text }
+                        "المحتوى المباشر للشاشة: $sampleTexts"
+                    }
+                }
             }
             is AgentAction.ClickElement -> {
                 val service = YaMosaedAccessibilityService.getInstance()
-                var success = false
-                if (!action.text.isNullOrBlank()) {
-                    success = service?.clickByText(action.text) ?: false
+                if (service == null) {
+                    "خدمة إمكانية الوصول (Accessibility) غير مفعلة. يرجى تفعيلها للنقر التلقائي على العناصر."
+                } else {
+                    var success = false
+                    val targetText = action.text ?: ""
+                    if (targetText.isNotBlank()) {
+                        success = service.clickByTextOrDescription(targetText)
+                    }
+                    if (!success && !action.viewId.isNullOrBlank()) {
+                        success = service.clickByViewId(action.viewId)
+                    }
+                    if (success) {
+                        "تم النقر على العنصر \"$targetText\" بنجاح."
+                    } else {
+                        "تعذر العثور على عنصر \"$targetText\" للنقر عليه في الشاشة الحالية."
+                    }
                 }
-                if (!success && !action.viewId.isNullOrBlank()) {
-                    success = service?.clickByViewId(action.viewId) ?: false
-                }
-                if (success) "تم النقر بنجاح." else "جاري تحويل الإجراء على العنصر المطلوبة."
             }
             is AgentAction.EnterText -> {
                 val service = YaMosaedAccessibilityService.getInstance()
-                service?.enterText(action.text, action.viewId)
-                "تم إدخال النص \"${action.text}\"."
+                if (service == null) {
+                    "خدمة إمكانية الوصول (Accessibility) غير مفعلة. يرجى تفعيلها لإدخال النصوص."
+                } else {
+                    val success = service.enterText(action.text, action.viewId)
+                    if (success) {
+                        "تم إدخال النص \"${action.text}\" بنجاح."
+                    } else {
+                        "تعذر العثور على حقل نصي متاح لإدخال \"${action.text}\"."
+                    }
+                }
             }
             is AgentAction.Scroll -> {
                 val service = YaMosaedAccessibilityService.getInstance()
-                service?.performScroll(action.direction)
-                "تم التمرير لـ ${action.direction}."
+                if (service == null) {
+                    "خدمة إمكانية الوصول غير مفعلة للتمرير."
+                } else {
+                    val success = service.performScroll(action.direction)
+                    if (success) "تم التمرير لـ ${action.direction}." else "تعذر التمرير في الشاشة الحالية."
+                }
             }
             is AgentAction.PressBack -> {
                 val service = YaMosaedAccessibilityService.getInstance()
-                service?.performGlobalBackAction()
-                "تم الرجوع للخلف."
+                if (service == null) {
+                    "خدمة إمكانية الوصول غير مفعلة."
+                } else {
+                    service.performGlobalBackAction()
+                    "تم الرجوع للخلف."
+                }
             }
             is AgentAction.PressHome -> {
                 val service = YaMosaedAccessibilityService.getInstance()
-                service?.performGlobalHomeAction()
-                "تم الانتقال للشاشة الرئيسية."
+                if (service == null) {
+                    "خدمة إمكانية الوصول غير مفعلة."
+                } else {
+                    service.performGlobalHomeAction()
+                    "تم الانتقال للشاشة الرئيسية."
+                }
             }
             is AgentAction.Reply -> action.message
             is AgentAction.AskUser -> action.question
@@ -331,9 +368,82 @@ class AgentOrchestrator(
         }
     }
 
+    private fun resolveAndLaunchApp(query: String): String {
+        val pm = context.packageManager
+        val cleanQuery = query.trim().lowercase()
+
+        // 1. Direct Package Launch Attempt
+        if (cleanQuery.contains(".")) {
+            val directIntent = pm.getLaunchIntentForPackage(cleanQuery)
+            if (directIntent != null) {
+                directIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(directIntent)
+                return "تم فتح التطبيق بنجاح."
+            }
+        }
+
+        // 2. Specific System & Known App Mappings
+        when {
+            cleanQuery.contains("إعدادات") || cleanQuery.contains("اعدادات") || cleanQuery.contains("settings") -> {
+                val intent = Intent(Settings.ACTION_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                context.startActivity(intent)
+                return "تم فتح إعدادات النظام بنجاح."
+            }
+            cleanQuery.contains("كاميرا") || cleanQuery.contains("الكاميرا") || cleanQuery.contains("camera") -> {
+                val intent = Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                context.startActivity(intent)
+                return "تم فتح الكاميرا بنجاح."
+            }
+            cleanQuery.contains("هاتف") || cleanQuery.contains("مكالمات") || cleanQuery.contains("اتصال") || cleanQuery.contains("phone") -> {
+                val intent = Intent(Intent.ACTION_DIAL).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                context.startActivity(intent)
+                return "تم فتح لوحة الاتصال بنجاح."
+            }
+        }
+
+        // 3. Query All Installed Launcher Apps
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val launcherApps = pm.queryIntentActivities(mainIntent, 0)
+
+        for (resolveInfo in launcherApps) {
+            val appLabel = resolveInfo.loadLabel(pm).toString().lowercase()
+            val pkgName = resolveInfo.activityInfo.packageName.lowercase()
+
+            if (appLabel.contains(cleanQuery) || pkgName.contains(cleanQuery) || matchesAppAlias(cleanQuery, appLabel, pkgName)) {
+                val launchIntent = pm.getLaunchIntentForPackage(resolveInfo.activityInfo.packageName)
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(launchIntent)
+                    return "تم فتح تطبيق ${resolveInfo.loadLabel(pm)} بنجاح."
+                }
+            }
+        }
+
+        return "عفواً، لم يتم العثور على تطبيق \"$query\" مثبت على الهاتف."
+    }
+
+    private fun matchesAppAlias(query: String, label: String, pkg: String): Boolean {
+        return when {
+            query.contains("واتس") || query.contains("whatsapp") -> pkg.contains("whatsapp") || label.contains("whatsapp")
+            query.contains("يوتيوب") || query.contains("youtube") -> pkg.contains("youtube") || label.contains("youtube")
+            query.contains("سبوتيفاي") || query.contains("spotify") -> pkg.contains("spotify") || label.contains("spotify")
+            query.contains("تليجرام") || query.contains("telegram") -> pkg.contains("telegram") || label.contains("telegram")
+            query.contains("فيسبوك") || query.contains("facebook") -> pkg.contains("facebook") || label.contains("facebook")
+            query.contains("انستجرام") || query.contains("instagram") -> pkg.contains("instagram") || label.contains("instagram")
+            query.contains("كروم") || query.contains("متصفح") || query.contains("chrome") -> pkg.contains("chrome") || label.contains("chrome")
+            else -> false
+        }
+    }
+
     private fun inferFallbackAction(goal: String): AgentAction {
         val lower = goal.lowercase()
         return when {
+            lower.contains("افتح") || lower.contains("تطبيق") -> {
+                val appName = goal.replace("افتح", "").replace("تطبيق", "").trim()
+                AgentAction.LaunchApp(appName, appName)
+            }
             lower.contains("شغل") || lower.contains("أغنية") || lower.contains("موسيقى") || lower.contains("سبوتيفاي") -> {
                 val query = goal.replace("شغل", "").replace("أغنية", "").replace("في سبوتيفاي", "").trim()
                 AgentAction.SpotifyControl("search_and_play", if (query.isNotBlank()) query else "عمرو دياب")
@@ -352,6 +462,9 @@ class AgentOrchestrator(
             }
             lower.contains("مهمة") || lower.contains("احفظ") -> {
                 AgentAction.ManageTasks("add", title = goal)
+            }
+            lower.contains("اقرأ") || lower.contains("شاشة") -> {
+                AgentAction.ReadScreen
             }
             else -> AgentAction.FinishTask("تم تنفيذ طلبك: $goal بنجاح.")
         }

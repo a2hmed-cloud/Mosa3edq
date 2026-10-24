@@ -94,4 +94,24 @@ class ExampleRobolectricTest {
         assertEquals("gemini-3.5-flash", modelsList[0])
         assertEquals("gemini-3.1-pro-preview", modelsList[1])
     }
+
+    @Test
+    fun `test IntentClassifier fastHeuristicCheck for device actions`() {
+        val actionResult = com.example.ai.IntentClassifier.fastHeuristicCheck("افتح تطبيق الواتساب ورسالة لأحمد")
+        assertEquals(com.example.ai.IntentType.DEVICE_ACTION, actionResult?.type)
+
+        val chatResult = com.example.ai.IntentClassifier.fastHeuristicCheck("ازيك يا حمادة العامل ايه النهاردة")
+        assertEquals(com.example.ai.IntentType.CONVERSATION, chatResult?.type)
+
+        val searchResult = com.example.ai.IntentClassifier.fastHeuristicCheck("ابحث عن وصفة الكشري المصري في يوتيوب")
+        assertEquals(com.example.ai.IntentType.DEVICE_ACTION, searchResult?.type)
+    }
+
+    @Test
+    fun `test Arabic text normalization in IntentClassifier`() {
+        val normalized = com.example.ai.IntentClassifier.normalizeArabic("إرْسَالْ الأَلْفِ وَالْيَاءِ أَىْ")
+        assertEquals("ارسال الالف والياء اي", normalized)
+    }
 }
+
+
