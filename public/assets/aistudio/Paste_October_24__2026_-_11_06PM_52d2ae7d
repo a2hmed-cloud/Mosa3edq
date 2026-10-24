@@ -1,0 +1,695 @@
+HAMADA AI AGENT — COMPLETE ZERO-TO-PRODUCTION ENGINEERING PROMPT
+
+1. YOUR ROLE
+
+Act as a Senior Android Engineer, AI Agent Architect, Kotlin Developer, Accessibility Automation Specialist, Computer Vision Engineer, and QA Engineer.
+
+Build a complete Android application named Hamada AI Agent (حمادة) from scratch, through a fully functional and tested implementation.
+
+This is not a prototype, mockup, static UI, or chatbot-only application. It must be a real Android agent capable of understanding natural language, planning multi-step tasks, interacting with Android applications through supported APIs, observing results, recovering from failures, and responding naturally to ordinary conversation.
+
+The user develops using an Android phone, GitHub, and cloud builds. Do not require a local computer or Android Studio for the normal development workflow.
+
+2. NON-NEGOTIABLE DEVELOPMENT RULES
+
+1. Start by inspecting the existing repository and all relevant project files.
+2. If a repository already exists, preserve its useful code and history. If starting from an empty repository, create a complete project from scratch.
+3. Never replace functioning implementation with placeholders or simulated functionality.
+4. Never report a feature as complete merely because its UI or source code exists.
+5. Never fabricate successful actions, tests, screenshots, API responses, or build results.
+6. Implement features incrementally and build the application after each meaningful stage.
+7. Fix compiler errors and regressions before proceeding to dependent features.
+8. Keep credentials out of source code, Git history, logs, and publicly accessible configuration files.
+9. Do not expose or reuse previously disclosed API credentials. Require the user to rotate any exposed key.
+10. Maintain a clear distinction between implemented, compiled, unit-tested, emulator-tested, and real-device-tested functionality.
+11. Use real application state and actual Android APIs. No fake contacts, fake conversations, fake app launches, or simulated success.
+12. Never bypass Android security restrictions, app authentication, user consent, or protected system interfaces.
+13. Work directly on the project and commit real changes to GitHub when repository write access is available.
+14. If a dependency, API, permission, or platform limitation blocks a feature, explain the limitation and implement the best supported alternative.
+15. Do not stop after writing a plan. Execute the implementation, build, inspect errors, and continue fixing them until the available environment's limitations are reached.
+
+3. PLATFORM AND TECHNOLOGY
+
+Use:
+
+- Native Android.
+- Kotlin.
+- Jetpack Compose.
+- Material 3.
+- Coroutines and Flow for asynchronous operations.
+- Android AccessibilityService for supported UI inspection and interaction.
+- Android SpeechRecognizer or an appropriate supported speech-recognition provider.
+- Android TextToSpeech for spoken responses.
+- MediaProjection for user-approved screen capture when visual understanding is needed.
+- A configurable AI provider layer supporting compatible chat-completions APIs and structured tool calls.
+- DataStore or another appropriate secure configuration mechanism.
+- Room only where persistent structured local data is needed.
+- GitHub Actions for cloud builds, automated tests, and downloadable APK artifacts.
+
+Select stable library versions compatible with the project's Android SDK and Gradle configuration. Do not blindly upgrade every dependency.
+
+The application must remain usable on older Android phones where supported. Detect unavailable features and provide useful alternatives.
+
+4. INITIAL PROJECT AUDIT AND SETUP
+
+Inspect or create:
+
+- settings.gradle.kts
+- build.gradle.kts
+- gradle.properties
+- app/build.gradle.kts
+- AndroidManifest.xml
+- MainActivity.kt
+- Accessibility service implementation and configuration XML
+- Screen-capture implementation
+- AI provider and planning components
+- Resource files, icons, strings, and themes
+- Unit and instrumentation tests
+- GitHub Actions workflow
+
+Set a consistent package name, application ID, minimum SDK, target SDK, and Kotlin configuration appropriate to the actual project.
+
+Create a clean, maintainable package structure, such as:
+
+- app/ui/
+- app/agent/
+- app/ai/
+- app/accessibility/
+- app/capture/
+- app/speech/
+- app/permissions/
+- app/data/
+- app/settings/
+- app/testing/
+
+Adapt the exact structure to the project rather than duplicating existing classes.
+
+5. USER INTERFACE AND EXPERIENCE
+
+Create a polished Arabic-first interface with right-to-left layout and support for Arabic Egyptian speech.
+
+Visual direction:
+
+- Dark navy or near-black background.
+- Cyan and blue accents.
+- A distinctive animated eye as the central identity of Hamada.
+- A prominent microphone and clear listening state.
+- An obvious settings entry.
+- A concise task status area.
+- A conversation and execution log that can be inspected when needed.
+- Clear permission setup and recovery screens.
+- Accessible text sizes, touch targets, and contrast.
+- Responsive layouts for phones and tablets.
+
+Keep the primary screen focused on the eye, voice interaction, and current agent state. Move secondary controls into settings or a collapsible panel.
+
+Implement real UI states:
+
+- Idle.
+- Listening.
+- Transcribing.
+- Thinking.
+- Planning.
+- Executing.
+- Observing.
+- Waiting for approval.
+- Speaking.
+- Completed.
+- Failed.
+- Permission required.
+
+Animations must reflect actual agent state, not imply that the agent is working when no work is happening.
+
+6. CONVERSATION VERSUS ACTION CLASSIFICATION
+
+Implement a reliable decision layer that distinguishes ordinary conversation from requests to control the phone.
+
+Examples of ordinary conversation:
+
+- Greetings.
+- Questions about knowledge.
+- Requests for explanations.
+- Casual conversation.
+- Requests to summarize text already provided.
+
+These should produce direct conversational responses without launching applications or executing unnecessary actions.
+
+Examples of device-action requests:
+
+- Open an application.
+- Navigate to a particular screen.
+- Search for information inside an application.
+- Scroll to a visible item.
+- Enter text in a specified field.
+- Read and explain the current screen.
+- Perform a sequence of actions in another application.
+
+These should create an actionable task plan.
+
+Do not rely only on keywords. Use the model's structured classification and a local validation layer.
+
+If intent is ambiguous, ask one short clarification rather than guessing a consequential action.
+
+If the AI service is unavailable, report the problem clearly. Never claim that a request was completed without execution.
+
+7. AGENT ARCHITECTURE
+
+Implement a modular agent with these responsibilities:
+
+AgentOrchestrator
+
+Owns the task lifecycle and coordinates planning, observation, execution, validation, and recovery.
+
+AgentPlanner
+
+Receives the user's objective, current screen information, recent observations, available tools, and previous action results.
+
+Returns a validated structured action, not arbitrary executable code.
+
+AgentExecutor
+
+Validates and dispatches the selected action through approved Android APIs.
+
+ScreenObserver
+
+Collects visible text, content descriptions, clickable elements, bounds, enabled states, and other accessible UI metadata.
+
+ScreenCaptureManager
+
+Obtains user-approved screenshots when necessary and manages the MediaProjection lifecycle.
+
+VisionAnalyzer
+
+Optionally analyzes screenshots through a vision-capable model. It must distinguish actual visual observations from assumptions and return screen-grounded targets.
+
+TaskMemory
+
+Maintains task-specific state, recent observations, action history, failure information, and the current goal. Do not confuse task memory with unrestricted permanent storage of private user data.
+
+PermissionManager
+
+Explains, requests, and verifies the permissions required by each capability.
+
+SpeechController
+
+Manages speech recognition, transcription, text-to-speech, cancellation, and unavailable speech services.
+
+AgentStateStore
+
+Exposes observable state to the Compose UI using StateFlow or an equivalent approach.
+
+8. ACTION TOOL SYSTEM
+
+Create a typed, allowlisted action system.
+
+Potential tools:
+
+- launch_app
+- read_screen
+- capture_screen
+- click_element
+- click_text
+- long_press_element
+- enter_text
+- replace_text
+- scroll
+- swipe
+- press_back
+- press_home
+- wait
+- ask_user
+- reply
+- finish_task
+
+Each tool must have:
+
+- A typed input schema.
+- Input validation.
+- Permission checks.
+- Execution timeout.
+- Cancellation support.
+- A structured result.
+- Error handling.
+- A way to verify the result.
+- An audit entry that excludes secrets and unnecessary personal information.
+
+Never execute model-generated shell commands, arbitrary Kotlin, JavaScript, or other code as a tool action.
+
+Never allow the model to invent arbitrary tool names or bypass validation.
+
+9. ANDROID ACCESSIBILITY INTEGRATION
+
+Implement a properly declared AccessibilityService with the minimum necessary capabilities.
+
+When the user explicitly enables it, the service should be able to:
+
+- Inspect the active window's accessible UI hierarchy.
+- Read visible text and content descriptions where permitted.
+- Identify clickable, editable, scrollable, and enabled elements.
+- Return a compact representation of visible elements and their screen bounds.
+- Click an appropriate visible node.
+- Enter text into an appropriate editable node.
+- Perform supported gestures such as scrolling and swiping.
+- Navigate backward using supported APIs.
+- Detect changes to the active window and UI tree.
+- Report unavailable or inaccessible elements.
+
+Implementation requirements:
+
+1. Declare the accessibility service and its configuration correctly.
+2. Provide an explanation of why accessibility permission is needed.
+3. Direct the user to Android's accessibility settings to enable it.
+4. Detect whether the service is actually enabled and connected.
+5. Handle nodes that disappear or become stale before an action.
+6. Avoid clicking ambiguous duplicate labels without additional context.
+7. Use node bounds and screen coordinates only when necessary.
+8. Release accessibility nodes and other resources appropriately.
+9. Do not attempt to inspect secure windows or protected content beyond platform permissions.
+10. Do not silently enable accessibility or bypass system consent.
+
+If a target application does not expose useful accessibility information, use an approved screenshot-based alternative when available. Otherwise explain the limitation.
+
+10. SCREEN VISION AND VISUAL GROUNDING
+
+Do not stop at reading text from the accessibility tree.
+
+Integrate screenshot-based visual analysis into the agent loop using MediaProjection and a vision-capable model when configured.
+
+Required flow:
+
+1. Request screen-capture consent through the Android system.
+2. Capture the current frame using a correctly managed MediaProjection session.
+3. Resize or compress the image when appropriate.
+4. Send the image to a configured vision-capable provider using its documented API format.
+5. Analyze visible controls, labels, layout, dialogs, and screen state.
+6. Combine visual observations with accessibility metadata.
+7. Select an element based on both its label and screen context.
+8. Execute the action through supported accessibility gestures or UI-node APIs.
+9. Observe the resulting screen and verify whether the intended transition occurred.
+
+Important:
+
+- Do not assume every model supports images.
+- Do not claim that the model sees the screen when no screenshot was captured and transmitted successfully.
+- Do not use guessed coordinates as if they were verified targets.
+- Revalidate targets after scrolling, navigation, dialogs, or layout changes.
+- Respect Android version-specific MediaProjection requirements.
+- Handle screen-capture revocation, session termination, rotation, and permission denial.
+- Prefer accessibility-node interaction over coordinate taps whenever possible.
+- Clearly show when visual mode is unavailable.
+
+The user must remain aware when screen capture is active.
+
+11. MULTI-STEP TASK EXECUTION LOOP
+
+Implement the real control loop:
+
+1. Receive a voice or typed request.
+2. Classify it as conversation or device action.
+3. Respond directly if it is ordinary conversation.
+4. Convert a device request into a clear objective.
+5. Inspect the current application and screen.
+6. Build a short action plan.
+7. Choose one next action.
+8. Validate that action against the allowlist and safety rules.
+9. Execute the action.
+10. Wait for a bounded period or a relevant UI change.
+11. Observe the screen again.
+12. Compare the new state with the intended result.
+13. Update the plan based on the result.
+14. Recover from a recoverable failure using a different grounded strategy.
+15. Ask the user for clarification or approval when necessary.
+16. Stop when the objective is completed, blocked, cancelled, or the step/time budget is exhausted.
+17. Summarize what actually happened.
+
+Never treat a tool call being accepted as proof that the action succeeded.
+
+Define a configurable step budget, time budget, retry limit, and cancellation mechanism.
+
+Prevent infinite loops by tracking repeated actions and failed transitions.
+
+If the same action fails repeatedly, stop and explain why instead of continuing blindly.
+
+12. APP LAUNCHING AND CROSS-APP NAVIGATION
+
+Implement real application discovery and launching.
+
+Requirements:
+
+- Query launchable applications using supported PackageManager APIs.
+- Respect Android package-visibility rules.
+- Display installed applications that are discoverable by the application.
+- Resolve a user-mentioned application name to a real launchable package.
+- Handle multiple applications with similar names by asking the user to choose.
+- Open the selected application using a valid launch intent.
+- Confirm whether the launch actually occurred.
+- Observe the new foreground screen.
+- Continue the same task after launching the application.
+- Support navigation back to previous screens or the launcher when appropriate.
+- Preserve the task objective while switching applications.
+
+Do not assume every installed package can be discovered or launched.
+
+Do not force-stop other applications or bypass their authentication.
+
+13. TEXT ENTRY AND APPLICATION ACTIVITIES
+
+Implement supported text entry into visible editable fields.
+
+The agent should be able to:
+
+- Identify the intended text field.
+- Confirm the field is suitable for the requested content.
+- Enter text using supported accessibility APIs.
+- Verify the resulting field contents where accessible.
+- Detect when a keyboard or dialog changes the layout.
+- Handle Arabic and English text correctly.
+- Avoid entering text into the wrong field.
+- Report when an application blocks automated input.
+
+For actions such as sending messages, publishing posts, deleting content, making purchases, submitting forms, or sharing personal data, require explicit confirmation immediately before the consequential action.
+
+Typing a draft is not the same as sending it. Keep these operations separate.
+
+Do not automate CAPTCHA solving, security bypasses, or unauthorized account access.
+
+14. SAFETY AND USER APPROVAL
+
+Implement a centralized action-risk policy.
+
+Generally low-risk
+
+- Opening an application.
+- Reading accessible screen text.
+- Scrolling.
+- Navigating backward.
+- Opening ordinary settings screens.
+
+Requires explicit user approval
+
+- Sending messages or emails.
+- Publishing posts or comments.
+- Deleting files or conversations.
+- Purchases, payments, or financial transfers.
+- Sharing private information.
+- Changing important account or security settings.
+- Confirming consequential forms.
+
+The agent must display the intended action and target, then wait for the user's approval before execution.
+
+Do not interpret vague consent as approval for a specific sensitive action.
+
+Do not bypass device lock screens, biometric authentication, permissions, or app-level security.
+
+Provide an immediate stop or cancel control while a task is running.
+
+15. VOICE INPUT AND SPOKEN OUTPUT
+
+Implement a usable voice interaction system.
+
+Requirements:
+
+- Request microphone permission at runtime.
+- Check whether a suitable speech-recognition service exists.
+- Handle unavailable recognition services gracefully.
+- Show the current listening and transcription state.
+- Convert speech into text.
+- Allow correction of transcription before consequential actions.
+- Send the text to the agent's intent classifier.
+- Speak conversational responses using TextToSpeech when enabled.
+- Support Arabic speech output where an Arabic voice is installed.
+- Allow cancellation during listening, planning, execution, and speech.
+- Handle permission denial, recognition errors, network failure, and empty transcripts.
+
+Do not claim that voice recognition works on every device.
+
+If the phone lacks a usable recognition service, provide a clear setup message and a text-input fallback.
+
+Do not pretend to listen continuously when the microphone is not active.
+
+16. BACKGROUND EXECUTION
+
+If the user requests background task execution, implement it only through Android-supported mechanisms.
+
+Use a foreground service with a visible persistent notification when required for an ongoing user-started task.
+
+Requirements:
+
+- Respect foreground-service type declarations and restrictions for the target Android version.
+- Start the service only under permitted conditions.
+- Display an ongoing-task notification and a stop action.
+- Handle service cancellation and process recreation appropriately.
+- Avoid promising unlimited execution after the application is closed or the phone is restarted.
+- Do not implement covert monitoring or hidden background screen capture.
+- Do not assume microphone or screen-capture permissions remain valid indefinitely.
+
+If the Android version or device prevents a requested background behavior, explain the restriction and provide an available alternative.
+
+17. AI PROVIDER AND MODEL CONFIGURATION
+
+Implement a provider abstraction rather than hard-coding a single vendor.
+
+Support configurable fields:
+
+- API base URL.
+- API key.
+- Model identifier.
+- Request timeout.
+- Maximum response tokens, if supported.
+- Optional vision capability.
+- Optional streaming.
+- Optional compatible tool calling.
+
+Use the project's existing compatible API endpoint and model only after inspecting the actual code and verifying compatibility.
+
+Requirements:
+
+- Securely store user-supplied credentials using Android Keystore-backed encryption or an appropriate secure-storage design.
+- Never include secrets in source control.
+- Never log Authorization headers or full sensitive prompts.
+- Validate endpoint URLs.
+- Use HTTPS for remote credentials and requests.
+- Handle HTTP errors, rate limits, malformed JSON, timeouts, and network loss.
+- Use structured JSON output with strict validation.
+- Parse only expected fields.
+- Reject invalid tool arguments.
+- Show a useful error when the model or provider is unavailable.
+
+Do not assume that a model supports vision or native tool calling just because the provider accepts chat-completion requests.
+
+If the API provider exposes a compatible model endpoint, use the documented request and response format. Otherwise implement a provider adapter or report the incompatibility.
+
+18. SETTINGS AND PERMISSION CENTER
+
+Create a settings screen with real functionality for:
+
+- API endpoint.
+- Model name.
+- Secure API-key entry.
+- Connection test.
+- Speech language and voice.
+- Spoken responses on/off.
+- Screen vision status.
+- Accessibility-service status.
+- Microphone permission status.
+- Screen-capture permission flow.
+- Agent action budget.
+- Confirmation preferences.
+- Task history controls.
+- Clear task history.
+- Privacy and permission explanations.
+
+Do not display a feature as enabled unless its required configuration and permissions have been verified.
+
+Never show the complete API key after it has been saved.
+
+19. TASK HISTORY AND OBSERVABILITY
+
+Provide a concise, inspectable task history.
+
+Each task should include:
+
+- User objective.
+- Start and end time.
+- Actions attempted.
+- Sanitized action results.
+- Whether the objective was completed, failed, cancelled, or blocked.
+- A concise explanation of the final outcome.
+
+Avoid saving full screenshots, private messages, credentials, or sensitive screen contents by default.
+
+Make task history deletable and document the data that remains on the device or is sent to the AI provider.
+
+20. ERROR HANDLING AND RECOVERY
+
+Handle at least:
+
+- Accessibility service disabled.
+- Required permission denied.
+- No launch intent found.
+- App not discoverable.
+- Screen node not found.
+- Ambiguous target.
+- Stale UI node.
+- Click failure.
+- Text-entry failure.
+- Screen-capture failure.
+- Unsupported vision model.
+- AI provider error.
+- Invalid model response.
+- Network timeout.
+- Repeated action.
+- User cancellation.
+- Android process or service interruption.
+- Target application blocking automation.
+
+Every error must result in a truthful, useful status rather than a fake success message.
+
+21. TESTING REQUIREMENTS
+
+Create automated tests for:
+
+- Conversation versus action classification.
+- Valid and invalid tool arguments.
+- JSON parsing and validation.
+- Action-risk classification.
+- Confirmation requirements.
+- Step budgets and retry limits.
+- Cancellation.
+- Task-state transitions.
+- Error recovery.
+- Provider error handling.
+- History sanitization.
+
+Add integration or instrumentation tests for components that can be tested in the available environment.
+
+Create a manual real-device acceptance checklist covering:
+
+1. Ordinary conversation produces a response without launching an app.
+2. A simple app-launch request opens the correct app.
+3. A multi-step navigation request moves through actual screens.
+4. Screen reading reports the actual accessible content.
+5. Scrolling changes the visible screen.
+6. Text entry modifies the intended field.
+7. A failed click is detected and does not count as success.
+8. Cross-app navigation preserves the original objective.
+9. A consequential action waits for approval.
+10. Cancellation stops further agent actions.
+11. Screen vision requests consent and handles denial.
+12. Unavailable speech recognition falls back to text.
+13. Provider failure produces an honest error.
+14. Task history reflects actual execution results.
+
+Clearly label which tests were run in CI and which require a real device.
+
+22. GITHUB ACTIONS AND APK DELIVERY
+
+Create or repair a GitHub Actions workflow that:
+
+- Runs on push to the main branch and on manual workflow dispatch.
+- Uses a compatible JDK and Gradle setup.
+- Runs available unit tests.
+- Builds the debug APK.
+- Uploads the generated APK as a downloadable workflow artifact.
+- Saves build logs and test reports when possible.
+- Fails visibly when compilation or tests fail.
+- Uses no signing secrets unless a separately authorized release process requires them.
+
+Use the actual generated APK path from the Gradle output. Do not fabricate artifact URLs.
+
+When reporting a build, provide the exact workflow run URL, status, commit SHA, and artifact link only if the artifact actually exists.
+
+Do not describe a debug APK as a production release.
+
+23. IMPLEMENTATION PHASES
+
+Execute the work in the following order.
+
+Phase 1 — Audit and reproducible build
+
+Inspect the repository, fix project configuration, and establish a reliable CI build.
+
+Phase 2 — Core architecture
+
+Implement typed tools, agent state, orchestration, validation, cancellation, and structured errors.
+
+Phase 3 — Conversation and planning
+
+Separate ordinary conversation from device actions. Implement objective-based planning and bounded execution.
+
+Phase 4 — Accessibility control
+
+Implement screen observation, element selection, text entry, scrolling, clicking, back navigation, and cross-app launches.
+
+Phase 5 — Real screen vision
+
+Integrate user-approved screen capture and vision analysis into the same observe-plan-act-verify loop.
+
+Phase 6 — Voice interaction
+
+Implement speech recognition, Arabic spoken responses, transcription display, and text fallback.
+
+Phase 7 — Safety and background operation
+
+Add sensitive-action confirmations, a stop control, and permitted foreground execution where needed.
+
+Phase 8 — Settings and persistence
+
+Complete provider configuration, permission diagnostics, privacy-aware task history, and settings.
+
+Phase 9 — Testing and hardening
+
+Run tests, fix regressions, validate error handling, and perform all available integration checks.
+
+Phase 10 — Latest build and handoff
+
+Build the final debug APK, upload the artifact, and report the real implementation and testing status.
+
+Do not skip a phase silently. If a phase depends on a missing credential, physical device, provider capability, or Android permission, complete the portions possible in code and clearly state the remaining requirement.
+
+24. DEFINITION OF DONE
+
+The project is not complete merely because it compiles.
+
+A feature may be called implemented only when its source code exists and its dependencies are connected correctly.
+
+A feature may be called build-verified only when the corresponding build succeeds.
+
+A feature may be called test-verified only when the relevant tests actually pass.
+
+A feature may be called device-verified only when it has been exercised on an actual Android device and the result has been observed.
+
+The overall project is ready for a real-device trial when:
+
+- The application builds successfully.
+- Conversation and device-action requests are handled differently.
+- The agent can open a real application.
+- It can inspect the current accessible screen.
+- It can perform supported actions and inspect the result.
+- It can complete a bounded multi-step task or explain exactly why it cannot.
+- Screen vision is genuinely connected when enabled.
+- Consequential actions require approval.
+- Voice failure has a usable fallback.
+- Errors and cancellation are handled.
+- CI results and APK artifacts are available.
+
+Do not claim that every Android application is fully automatable. Some apps hide content, restrict accessibility, require user authentication, or block automated interaction.
+
+25. REQUIRED FINAL REPORT
+
+At the end, provide:
+
+1. A summary of the real changes made.
+2. The important files created or modified.
+3. The features implemented.
+4. The features that compile.
+5. The automated tests that actually passed or failed.
+6. The functions that still require testing on a physical device.
+7. Any missing credentials or permissions.
+8. Known Android platform limitations.
+9. The latest Git commit SHA.
+10. The latest GitHub Actions workflow URL and actual result.
+11. A verified APK artifact link if the build uploaded one.
+12. The exact next action the user must take on their phone.
+
+Start by inspecting the repository and current build status. Then implement, build, test, fix errors, and continue. Do not stop at a design proposal or a list of future recommendations.

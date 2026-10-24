@@ -1,0 +1,7 @@
+{
+  "name": "YaMosaed",
+  "description": "مساعد شخصي ذكي باللغة العربية المصرية للتحكم بالهاتف وتأدية المهام",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

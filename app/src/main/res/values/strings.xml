@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">يا مساعد</string>
+    <string name="accessibility_service_description">يقوم "يا مساعد" بقراءة أجزاء من الشاشة لمساعدتك في التنفيذ التلقائي للأوامر وتنفيذ المهام وتصفح التطبيقات بطلبك الصوتي.</string>
+    <string name="notification_channel_name">خدمة يا مساعد الصوتية</string>
+    <string name="notification_channel_desc">إشعار الاستماع والتحكم الدائم في الخلفية للمساعد الذكي</string>
+    <string name="notification_title">يا مساعد يستمع...</string>
+    <string name="notification_text">المساعد الذكي يعمل في الخلفية وجاهز لتلقي الأوامر.</string>
+</resources>
