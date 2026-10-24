@@ -50,11 +50,17 @@ class MainActivity : ComponentActivity() {
         geminiApiClient = GeminiApiClient(
             customApiKeyProvider = {
                 runBlocking {
-                    try {
-                        settingsRepository.apiKeyFlow.first()
-                    } catch (e: Exception) {
-                        ""
-                    }
+                    try { settingsRepository.apiKeyFlow.first() } catch (e: Exception) { "" }
+                }
+            },
+            customProviderSupplier = {
+                runBlocking {
+                    try { settingsRepository.providerFlow.first() } catch (e: Exception) { "gemini" }
+                }
+            },
+            customBaseUrlSupplier = {
+                runBlocking {
+                    try { settingsRepository.baseUrlFlow.first() } catch (e: Exception) { "https://generativelanguage.googleapis.com" }
                 }
             }
         )

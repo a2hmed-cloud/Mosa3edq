@@ -14,6 +14,9 @@ class SettingsRepository(private val context: Context) {
     companion object {
         val GEMINI_API_KEY = stringPreferencesKey("gemini_api_key")
         val GEMINI_MODEL = stringPreferencesKey("gemini_model")
+        val AI_PROVIDER = stringPreferencesKey("ai_provider")
+        val API_BASE_URL = stringPreferencesKey("api_base_url")
+        val CUSTOM_MODEL_OVERRIDE = stringPreferencesKey("custom_model_override")
         val VOICE_RESPONSE_ENABLED = booleanPreferencesKey("voice_response_enabled")
         val WAKE_WORD_ENABLED = booleanPreferencesKey("wake_word_enabled")
         val HIGH_RISK_CONFIRMATION = booleanPreferencesKey("high_risk_confirmation")
@@ -26,6 +29,18 @@ class SettingsRepository(private val context: Context) {
 
     val modelFlow: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[GEMINI_MODEL] ?: "gemini-3.5-flash"
+    }
+
+    val providerFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[AI_PROVIDER] ?: "gemini"
+    }
+
+    val baseUrlFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[API_BASE_URL] ?: "https://generativelanguage.googleapis.com"
+    }
+
+    val customModelOverrideFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[CUSTOM_MODEL_OVERRIDE] ?: ""
     }
 
     val voiceEnabledFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -53,6 +68,24 @@ class SettingsRepository(private val context: Context) {
     suspend fun saveModel(model: String) {
         context.dataStore.edit { prefs ->
             prefs[GEMINI_MODEL] = model
+        }
+    }
+
+    suspend fun saveProvider(provider: String) {
+        context.dataStore.edit { prefs ->
+            prefs[AI_PROVIDER] = provider
+        }
+    }
+
+    suspend fun saveBaseUrl(url: String) {
+        context.dataStore.edit { prefs ->
+            prefs[API_BASE_URL] = url.trim()
+        }
+    }
+
+    suspend fun saveCustomModelOverride(model: String) {
+        context.dataStore.edit { prefs ->
+            prefs[CUSTOM_MODEL_OVERRIDE] = model.trim()
         }
     }
 

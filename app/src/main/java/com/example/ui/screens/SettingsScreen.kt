@@ -1,12 +1,14 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -35,13 +37,24 @@ fun SettingsScreen(
 
     val apiKey by settingsRepository.apiKeyFlow.collectAsState(initial = "")
     val selectedModel by settingsRepository.modelFlow.collectAsState(initial = "gemini-3.5-flash")
+    val selectedProvider by settingsRepository.providerFlow.collectAsState(initial = "gemini")
+    val baseUrl by settingsRepository.baseUrlFlow.collectAsState(initial = "https://generativelanguage.googleapis.com")
+    val customModelOverride by settingsRepository.customModelOverrideFlow.collectAsState(initial = "")
+
     val voiceEnabled by settingsRepository.voiceEnabledFlow.collectAsState(initial = true)
     val wakeWordEnabled by settingsRepository.wakeWordEnabledFlow.collectAsState(initial = false)
     val defaultCity by settingsRepository.defaultCityFlow.collectAsState(initial = "القاهرة")
 
     var apiKeyInput by remember(apiKey) { mutableStateOf(apiKey) }
-    var keyVisible by remember { mutableStateOf(false) }
+    var providerInput by remember(selectedProvider) { mutableStateOf(selectedProvider) }
+    var baseUrlInput by remember(baseUrl) { mutableStateOf(baseUrl) }
+    var customModelInput by remember(customModelOverride) { mutableStateOf(customModelOverride) }
     var cityInput by remember(defaultCity) { mutableStateOf(defaultCity) }
+
+    var keyVisible by remember { mutableStateOf(false) }
+    var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isFetchingModels by remember { mutableStateOf(false) }
+    var fetchStatusMessage by remember { mutableStateOf<String?>(null) }
 
     var testStatusMessage by remember { mutableStateOf<String?>(null) }
     var isTesting by remember { mutableStateOf(false) }
@@ -50,7 +63,7 @@ fun SettingsScreen(
         containerColor = NavyBackground,
         topBar = {
             TopAppBar(
-                title = { Text("إعدادات يا مساعد", color = TextWhite, fontWeight = FontWeight.Bold) },
+                title = { Text("إعدادات يا مساعد والذكاء الاصطناعي", color = TextWhite, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -73,7 +86,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
-            // Section 1: Gemini API Key & Model
+            // Section 1: AI Provider & Credentials
             Card(
                 colors = CardDefaults.cardColors(containerColor = NavySurface),
                 shape = RoundedCornerShape(16.dp),
@@ -83,21 +96,83 @@ fun SettingsScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("مفتاح Gemini API والنموذج", color = CyanPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("مزوّد خدمة الذكاء الاصطناعي (AI Provider)", color = CyanPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
 
                     Text(
-                        "أدخل مفتاح Gemini API الخاص بك لتأمين الاتصال المباشر واستخدام الذكاء الاصطناعي لفهم الأوامر.",
+                        "اختر المزوّد المطلوب وأدخل بيانات الاتصال. يدعم التطبيق Google Gemini والمزوّدين المتوافقين مع OpenAI (مثل BluesMinds, Groq, OpenRouter, LocalAI).",
                         color = TextMuted,
                         fontSize = 13.sp
                     )
 
+                    // Provider Options Radio Group
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(
+                                selected = providerInput == "gemini",
+                                onClick = {
+                                    providerInput = "gemini"
+                                    baseUrlInput = "https://generativelanguage.googleapis.com"
+                                    scope.launch {
+                                        settingsRepository.saveProvider("gemini")
+                                        settingsRepository.saveBaseUrl("https://generativelanguage.googleapis.com")
+                                    }
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = CyanPrimary)
+                            )
+                            Text("Google Gemini (المزوّد الافتراضي)", color = TextWhite, fontSize = 14.sp)
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(
+                                selected = providerInput == "openai_compatible",
+                                onClick = {
+                                    providerInput = "openai_compatible"
+                                    if (baseUrlInput.contains("generativelanguage")) {
+                                        baseUrlInput = "https://api.bluesminds.com/v1"
+                                    }
+                                    scope.launch {
+                                        settingsRepository.saveProvider("openai_compatible")
+                                        settingsRepository.saveBaseUrl(baseUrlInput)
+                                    }
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = CyanPrimary)
+                            )
+                            Text("OpenAI Compatible (BluesMinds / Groq / OpenRouter / Custom)", color = TextWhite, fontSize = 14.sp)
+                        }
+                    }
+
+                    // Base URL Input (for OpenAI Compatible)
+                    if (providerInput == "openai_compatible") {
+                        OutlinedTextField(
+                            value = baseUrlInput,
+                            onValueChange = {
+                                baseUrlInput = it
+                                scope.launch { settingsRepository.saveBaseUrl(it) }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("عنوان API الأساسي (Base URL)") },
+                            placeholder = { Text("https://api.bluesminds.com/v1") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = TextMuted,
+                                focusedTextColor = TextWhite,
+                                unfocusedTextColor = TextWhite
+                            ),
+                            singleLine = true
+                        )
+                    }
+
+                    // API Key Field
                     OutlinedTextField(
                         value = apiKeyInput,
-                        onValueChange = { apiKeyInput = it },
+                        onValueChange = {
+                            apiKeyInput = it
+                            scope.launch { settingsRepository.saveApiKey(it) }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("api_key_input"),
-                        label = { Text("Gemini API Key") },
+                        label = { Text(if (providerInput == "gemini") "Gemini API Key" else "API Key / Bearer Token") },
                         visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
                             IconButton(onClick = { keyVisible = !keyVisible }) {
@@ -117,75 +192,170 @@ fun SettingsScreen(
                         singleLine = true
                     )
 
+                    // Fetch Models & Save Row
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
                             onClick = {
                                 scope.launch {
-                                    settingsRepository.saveApiKey(apiKeyInput)
-                                    testStatusMessage = "تم حفظ المفتاح بنجاح!"
+                                    isFetchingModels = true
+                                    fetchStatusMessage = "جاري جلب النماذج المتاحة من المزوّد..."
+                                    val result = geminiApiClient.fetchAvailableModels(
+                                        provider = providerInput,
+                                        baseUrl = baseUrlInput,
+                                        apiKey = apiKeyInput
+                                    )
+                                    isFetchingModels = false
+                                    result.fold(
+                                        onSuccess = { models ->
+                                            fetchedModels = models
+                                            fetchStatusMessage = "تم جلب ${models.size} نموذجاً بنجاح!"
+                                        },
+                                        onFailure = { err ->
+                                            fetchStatusMessage = "عفواً، تعذر جلب النماذج: ${err.message}"
+                                        }
+                                    )
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = NavyBackground),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("حفظ المفتاح")
+                            if (isFetchingModels) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = NavyBackground, strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("جلب النماذج المتاحة")
+                            }
                         }
 
                         OutlinedButton(
                             onClick = {
                                 scope.launch {
                                     isTesting = true
-                                    testStatusMessage = "جاري اختبار الاتصال بالنموذج..."
+                                    testStatusMessage = "جاري اختبار الاتصال..."
+                                    val effectiveModel = customModelInput.ifBlank { selectedModel }
                                     val result = geminiApiClient.generateResponse(
                                         prompt = "قل مرحباً بكلمة واحدة فقط بالعربية",
-                                        modelName = selectedModel
+                                        modelName = effectiveModel
                                     )
                                     isTesting = false
                                     testStatusMessage = result.fold(
-                                        onSuccess = { "نجح الاتصال بـ Gemini API: $it" },
+                                        onSuccess = { "نجح الاتصال بالمزوّد والنموذج: $it" },
                                         onFailure = { "فشل الاتصال: ${it.message}" }
                                     )
                                 }
                             },
-                            border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(CyanPrimary)),
+                            border = ButtonDefaults.outlinedButtonBorder(enabled = true),
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("اختبار الاتصال", color = CyanPrimary)
                         }
                     }
 
+                    fetchStatusMessage?.let { status ->
+                        Text(
+                            text = status,
+                            color = if (status.contains("بنجاح")) SuccessGreen else WarningAmber,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
                     testStatusMessage?.let { status ->
                         Text(
                             text = status,
-                            color = if (status.contains("نجح")) SuccessGreen else WarningAmber,
-                            fontSize = 13.sp,
+                            color = if (status.contains("نجح")) SuccessGreen else ErrorRed,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
 
                     HorizontalDivider(color = NavyCard)
 
-                    Text("اختر نموذج Gemini:", color = TextWhite, fontSize = 14.sp)
+                    // Fetched Models Selection List
+                    Text("النموذج المختار للتعامل مع المساعد:", color = TextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = selectedModel == "gemini-3.5-flash",
-                            onClick = { scope.launch { settingsRepository.saveModel("gemini-3.5-flash") } },
-                            colors = RadioButtonDefaults.colors(selectedColor = CyanPrimary)
-                        )
-                        Text("gemini-3.5-flash (سريع وموصى به)", color = TextWhite, fontSize = 14.sp)
+                    if (fetchedModels.isNotEmpty()) {
+                        Text("النماذج المتاحة من المزوّد:", color = TextMuted, fontSize = 12.sp)
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            fetchedModels.take(15).forEach { mName ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            customModelInput = mName
+                                            scope.launch {
+                                                settingsRepository.saveModel(mName)
+                                                settingsRepository.saveCustomModelOverride(mName)
+                                            }
+                                        }
+                                ) {
+                                    RadioButton(
+                                        selected = selectedModel == mName || customModelInput == mName,
+                                        onClick = {
+                                            customModelInput = mName
+                                            scope.launch {
+                                                settingsRepository.saveModel(mName)
+                                                settingsRepository.saveCustomModelOverride(mName)
+                                            }
+                                        },
+                                        colors = RadioButtonDefaults.colors(selectedColor = CyanPrimary)
+                                    )
+                                    Text(mName, color = TextWhite, fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    } else if (providerInput == "gemini") {
+                        // Standard Gemini presets
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(
+                                selected = selectedModel == "gemini-3.5-flash",
+                                onClick = {
+                                    customModelInput = "gemini-3.5-flash"
+                                    scope.launch { settingsRepository.saveModel("gemini-3.5-flash") }
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = CyanPrimary)
+                            )
+                            Text("gemini-3.5-flash (سريع وموصى به)", color = TextWhite, fontSize = 14.sp)
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(
+                                selected = selectedModel == "gemini-3.1-pro-preview",
+                                onClick = {
+                                    customModelInput = "gemini-3.1-pro-preview"
+                                    scope.launch { settingsRepository.saveModel("gemini-3.1-pro-preview") }
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = CyanPrimary)
+                            )
+                            Text("gemini-3.1-pro-preview (تفكير عميق)", color = TextWhite, fontSize = 14.sp)
+                        }
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = selectedModel == "gemini-3.1-pro-preview",
-                            onClick = { scope.launch { settingsRepository.saveModel("gemini-3.1-pro-preview") } },
-                            colors = RadioButtonDefaults.colors(selectedColor = CyanPrimary)
-                        )
-                        Text("gemini-3.1-pro-preview (تفكير عميق)", color = TextWhite, fontSize = 14.sp)
-                    }
+                    // Manual Model Override Field
+                    OutlinedTextField(
+                        value = customModelInput,
+                        onValueChange = {
+                            customModelInput = it
+                            scope.launch {
+                                settingsRepository.saveModel(it)
+                                settingsRepository.saveCustomModelOverride(it)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("اسم أو معرّف النموذج يدويًا (Model Identifier)") },
+                        placeholder = { Text("nvidia/ising-calibration-1.5-31b") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CyanPrimary,
+                            unfocusedBorderColor = TextMuted,
+                            focusedTextColor = TextWhite,
+                            unfocusedTextColor = TextWhite
+                        ),
+                        singleLine = true
+                    )
                 }
             }
 
