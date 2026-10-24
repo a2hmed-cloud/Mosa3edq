@@ -9,24 +9,31 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.agent.AgentOrchestrator
 import com.example.agent.AgentState
 import com.example.speech.SpeechController
-import com.example.ui.components.EyeView
+import com.example.ui.components.RobotFaceView
+import com.example.ui.components.SpeechBubbleView
 import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,159 +48,219 @@ fun MainAssistantScreen(
 ) {
     val agentState by orchestrator.agentState.collectAsState()
     val isListening by speechController.isListening.collectAsState()
+    val isSpeaking by speechController.isSpeaking.collectAsState()
     val liveText by speechController.liveTranscription.collectAsState()
     val lastSummary by orchestrator.lastSummary.collectAsState()
 
     var textInput by remember { mutableStateOf("") }
+    var isKeyboardExpanded by remember { mutableStateOf(false) }
 
     val quickActions = listOf(
         "شغل أغنية عمرو دياب في سبوتيفاي" to "🎵",
         "الطقس في القاهرة النهاردة" to "☀️",
         "اضبط منبه الساعة 8 الصبح" to "⏰",
         "اضبط مؤقت 60 ثانية" to "⏱️",
-        "احفظ مهمة شراء مستلزمات المنزل" to "📝",
+        "احفظ مهمة شراء مستلزمات" to "📝",
         "البحث عن أقرب صيدلية" to "🗺️",
-        "اقرأ عناصر الشاشة الحالية" to "👁️"
+        "اقرأ الشاشة الحالية" to "👁️"
     )
 
-    Scaffold(
-        containerColor = NavyBackground,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "يا مساعد (YaMosaed)",
-                        color = TextWhite,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
+    // Compute dynamic bubble text
+    val bubbleText = when {
+        liveText.isNotBlank() -> liveText
+        agentState is AgentState.Thinking -> "ثانية واحدة، بفكّر..."
+        agentState is AgentState.Planning -> "جاري تخطيط خطوات العملية..."
+        agentState is AgentState.Executing -> "بنفّذ الخطوة دي..."
+        agentState is AgentState.Observing -> "بشوف محتوى الشاشة..."
+        agentState is AgentState.Verifying -> "بتأكد إن العملية تمت بنجاح..."
+        agentState is AgentState.Speaking -> (agentState as AgentState.Speaking).message
+        agentState is AgentState.Success -> (agentState as AgentState.Success).summary
+        agentState is AgentState.Annoyed -> "توقف الإجراء أو تعذر الوصول للنصر..."
+        agentState is AgentState.Failed -> (agentState as AgentState.Failed).error
+        lastSummary.isNotBlank() -> lastSummary
+        isListening -> "سامعك كويس، اتكلم..."
+        else -> "أهلاً بيك! أنا حمادة، اضغط عليا أو اتكلم علشان أساعدك."
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        NavySurface,
+                        NavyBackground
                     )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = NavyBackground),
-                actions = {
-                    TextButton(onClick = onNavigateToPermissions) {
-                        Text("الأذونات", color = CyanPrimary, fontSize = 13.sp)
-                    }
-                    TextButton(onClick = onNavigateToTasks) {
-                        Text("المهام", color = CyanPrimary, fontSize = 13.sp)
-                    }
-                    TextButton(onClick = onNavigateToLogs) {
-                        Text("السجل", color = CyanPrimary, fontSize = 13.sp)
-                    }
-                    TextButton(onClick = onNavigateToSettings) {
-                        Text("الإعدادات", color = CyanPrimary, fontSize = 13.sp)
-                    }
-                }
+                )
             )
+    ) {
+        // Minimal Floating Top Navigation Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                color = NavySurface.copy(alpha = 0.8f),
+                shape = RoundedCornerShape(20.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CyanPrimary.copy(alpha = 0.3f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isListening) ErrorRed else if (isSpeaking) SuccessGreen else CyanPrimary
+                            )
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Hamada AI",
+                        color = TextWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Minimal Action Icon Buttons
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                IconButton(
+                    onClick = onNavigateToPermissions,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(NavySurface.copy(alpha = 0.8f))
+                ) {
+                    Icon(Icons.Default.Security, contentDescription = "الأذونات", tint = CyanPrimary, modifier = Modifier.size(20.dp))
+                }
+
+                IconButton(
+                    onClick = onNavigateToTasks,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(NavySurface.copy(alpha = 0.8f))
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = "المهام", tint = CyanPrimary, modifier = Modifier.size(20.dp))
+                }
+
+                IconButton(
+                    onClick = onNavigateToLogs,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(NavySurface.copy(alpha = 0.8f))
+                ) {
+                    Icon(Icons.Default.History, contentDescription = "السجل", tint = CyanPrimary, modifier = Modifier.size(20.dp))
+                }
+
+                IconButton(
+                    onClick = onNavigateToSettings,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(NavySurface.copy(alpha = 0.8f))
+                ) {
+                    Icon(Icons.Default.Settings, contentDescription = "الإعدادات", tint = CyanPrimary, modifier = Modifier.size(20.dp))
+                }
+            }
         }
-    ) { innerPadding ->
+
+        // Center Living Robot Face & Speech Bubble
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
                 .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.Center
         ) {
-
-            // Top Status Badge
-            Surface(
+            // Speech Bubble above the Robot Face
+            SpeechBubbleView(
+                text = bubbleText,
+                visible = true,
                 modifier = Modifier
-                    .padding(top = 8.dp)
-                    .clip(RoundedCornerShape(20.dp)),
-                color = NavyCard
-            ) {
-                val stateText = when (agentState) {
-                    is AgentState.Idle -> "جاهز للاستماع والخدمة"
-                    is AgentState.Listening -> "جاري الاستماع الآن..."
-                    is AgentState.Thinking -> "جاري التفكير والفهم..."
-                    is AgentState.Planning -> "جاري تخطيط الإجراءات..."
-                    is AgentState.Executing -> "جاري تنفيذ الإجراء على أندرويد..."
-                    is AgentState.Speaking -> "يتحدث..."
-                    is AgentState.Completed -> "تمت العملية بنجاح"
-                    is AgentState.Failed -> "حدث خطأ في التنفيذ"
-                    else -> "يا مساعد بالخدمة"
-                }
+                    .padding(bottom = 24.dp)
+                    .fillMaxWidth(0.9f)
+            )
 
-                Text(
-                    text = stateText,
-                    color = CyanPrimary,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-
-            // Central Animated Eye
-            EyeView(
+            // Full Living Robot Face (Eyes + Mouth)
+            RobotFaceView(
                 agentState = agentState,
+                isSpeaking = isSpeaking,
+                isListening = isListening,
                 modifier = Modifier
-                    .padding(vertical = 12.dp)
                     .clickable {
                         if (isListening) {
                             speechController.stopListening()
                         } else {
+                            speechController.onSpeechRecognizedCallback = { text ->
+                                orchestrator.processUserInput(text)
+                            }
                             speechController.startListening()
                         }
                     }
             )
+        }
 
-            // Transcription or Response Card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                colors = CardDefaults.cardColors(containerColor = NavySurface),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    val displayContent = when {
-                        liveText.isNotBlank() -> liveText
-                        lastSummary.isNotBlank() -> lastSummary
-                        else -> "أهلاً بك! اضغط على الميكروفون أو اكتب طلبك لتشغيل الأغاني، ضبط المنبه، الطقس، أو التحكم بالهاتف."
-                    }
-
-                    Text(
-                        text = displayContent,
-                        color = TextWhite,
-                        fontSize = 16.sp,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 22.sp
-                    )
-                }
-            }
-
-            // Quick Actions Scrollable List
+        // Bottom Controls Overlay (Mic FAB, Quick Chips, Text Input Bar)
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Collapsible Quick Prompts
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
+                    .padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(quickActions) { (actionText, icon) ->
                     SuggestionChip(
-                        onClick = {
-                            orchestrator.processUserInput(actionText)
-                        },
+                        onClick = { orchestrator.processUserInput(actionText) },
                         label = { Text("$icon $actionText", color = TextWhite, fontSize = 12.sp) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = NavyCard),
+                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = NavySurface.copy(alpha = 0.85f)),
                         border = SuggestionChipDefaults.suggestionChipBorder(
                             enabled = true,
-                            borderColor = CyanPrimary.copy(alpha = 0.4f)
+                            borderColor = CyanPrimary.copy(alpha = 0.35f)
                         )
                     )
                 }
             }
 
-            // Microphone FAB and Text Input Bar
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            // Central Voice Interaction Button & Keyboard Toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
+                IconButton(
+                    onClick = { isKeyboardExpanded = !isKeyboardExpanded },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(NavySurface)
+                ) {
+                    Icon(
+                        imageVector = if (isKeyboardExpanded) Icons.Default.Close else Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "كتابة",
+                        tint = CyanPrimary
+                    )
+                }
+
+                // Main Microphone Glowing Button
                 IconButton(
                     onClick = {
                         if (isListening) {
@@ -206,7 +273,7 @@ fun MainAssistantScreen(
                         }
                     },
                     modifier = Modifier
-                        .size(72.dp)
+                        .size(76.dp)
                         .clip(CircleShape)
                         .background(if (isListening) ErrorRed else CyanPrimary)
                         .testTag("mic_button")
@@ -215,15 +282,17 @@ fun MainAssistantScreen(
                         imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
                         contentDescription = "استماع صوتي",
                         tint = NavyBackground,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(38.dp)
                     )
                 }
+            }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Text Field Input
+            // Text Input Field Drawer when Expanded
+            AnimatedVisibility(visible = isKeyboardExpanded) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedTextField(
@@ -232,10 +301,10 @@ fun MainAssistantScreen(
                         modifier = Modifier
                             .weight(1f)
                             .testTag("user_text_input"),
-                        placeholder = { Text("اكتب طلبك هنا...", color = TextMuted) },
+                        placeholder = { Text("اكتب رسالتك لحمادة...", color = TextMuted) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = CyanPrimary,
-                            unfocusedBorderColor = TextMuted.copy(alpha = 0.5f),
+                            unfocusedBorderColor = TextMuted,
                             focusedContainerColor = NavySurface,
                             unfocusedContainerColor = NavySurface,
                             focusedTextColor = TextWhite,
@@ -266,7 +335,42 @@ fun MainAssistantScreen(
                     }
                 }
             }
+        }
 
+        // High Risk Action Approval Dialog Overlay
+        if (agentState is AgentState.WaitingApproval) {
+            val approvalState = agentState as AgentState.WaitingApproval
+            AlertDialog(
+                onDismissRequest = {},
+                containerColor = NavySurface,
+                title = { Text("تأكيد إجراء هام", color = TextWhite, fontWeight = FontWeight.Bold) },
+                text = {
+                    Text(
+                        "حمادة يطلب موافقتك الصريحة لتنفيذ الإجراء التالي:\n${approvalState.action.javaClass.simpleName}",
+                        color = TextMuted
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { approvalState.onConfirm() },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = NavyBackground)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Check, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("موافق وتنفيذ")
+                        }
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = { /* cancel action */ },
+                        border = androidx.compose.foundation.BorderStroke(1.dp, ErrorRed)
+                    ) {
+                        Text("إلغاء", color = ErrorRed)
+                    }
+                }
+            )
         }
     }
 }

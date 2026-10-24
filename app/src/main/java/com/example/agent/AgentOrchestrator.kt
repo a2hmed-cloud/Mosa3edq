@@ -32,10 +32,14 @@ sealed class AgentState {
     data class Planning(val goal: String) : AgentState()
     data class Executing(val actionName: String) : AgentState()
     object Observing : AgentState()
+    object Verifying : AgentState()
     data class WaitingApproval(val action: AgentAction, val onConfirm: () -> Unit) : AgentState()
     data class Speaking(val message: String) : AgentState()
+    data class Success(val summary: String) : AgentState()
+    data class Annoyed(val reason: String) : AgentState()
     data class Completed(val summary: String) : AgentState()
     data class Failed(val error: String) : AgentState()
+    data class Error(val message: String) : AgentState()
     data class PermissionRequired(val permissionName: String) : AgentState()
 }
 
@@ -104,7 +108,7 @@ class AgentOrchestrator(
                 _lastSummary.value = replyText
                 speechController.speak(replyText)
                 logExecution(trimmed, 1, "COMPLETED", replyText)
-                _agentState.value = AgentState.Completed(replyText)
+                _agentState.value = AgentState.Success(replyText)
             } else {
                 executeDeviceTaskLoop(trimmed, classification.targetGoal ?: trimmed)
             }
@@ -143,8 +147,8 @@ class AgentOrchestrator(
             )
 
             if (action == null) {
-                // Fallback to direct tool inference based on keywords
                 val fallbackAction = inferFallbackAction(goal)
+                _agentState.value = AgentState.Executing(fallbackAction.javaClass.simpleName)
                 val summary = executeSingleAction(fallbackAction)
                 executionSummary = summary
                 isFinished = true
@@ -152,6 +156,8 @@ class AgentOrchestrator(
                 _agentState.value = AgentState.Executing(action.javaClass.simpleName)
                 val summary = executeSingleAction(action)
                 executionSummary = summary
+
+                _agentState.value = AgentState.Verifying
 
                 if (action is AgentAction.FinishTask || action is AgentAction.Reply || action is AgentAction.GetWeather || action is AgentAction.SetAlarm || action is AgentAction.SetTimer) {
                     isFinished = true
@@ -167,7 +173,7 @@ class AgentOrchestrator(
         speechController.speak(executionSummary)
         _lastSummary.value = executionSummary
         logExecution(originalUserRequest, stepCount, "COMPLETED", executionSummary)
-        _agentState.value = AgentState.Completed(executionSummary)
+        _agentState.value = AgentState.Success(executionSummary)
     }
 
     private suspend fun executeSingleAction(action: AgentAction): String = withContext(Dispatchers.Main) {
@@ -193,12 +199,10 @@ class AgentOrchestrator(
                         }
                         try {
                             context.startActivity(spotifyIntent)
-                            // Try auto-click via accessibility
                             val service = YaMosaedAccessibilityService.getInstance()
                             service?.clickByText(query)
                             "جاري تشغيل \"$query\" على سبوتيفاي"
                         } catch (e: Exception) {
-                            // Fallback to web/intent search
                             val webSearch = Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/search/" + Uri.encode(query))).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
