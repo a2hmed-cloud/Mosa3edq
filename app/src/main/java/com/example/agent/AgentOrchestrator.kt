@@ -11,6 +11,8 @@ import android.provider.MediaStore
 import android.provider.Settings
 import com.example.accessibility.YaMosaedAccessibilityService
 import com.example.ai.GeminiApiClient
+import com.example.ai.IntentClassifier
+import com.example.ai.IntentType
 import com.example.data.AgentLogEntity
 import com.example.data.AppDatabase
 import com.example.data.SettingsRepository
@@ -126,7 +128,28 @@ class AgentOrchestrator(
         cancelCurrentTask()
 
         currentTaskJob = scope.launch {
-            runAgentLoop(trimmed)
+            _isTaskRunning.value = true
+            _currentGoal.value = trimmed
+            _liveSteps.value = emptyList()
+            _currentStepIndex.value = 0
+            _agentState.value = AgentState.Thinking
+
+            val intentClassifier = IntentClassifier(geminiApiClient)
+            val classification = intentClassifier.classify(trimmed)
+
+            if (classification.type == IntentType.CONVERSATION) {
+                val reply = classification.directReply ?: "أهلاً بيك! أنا معك، قول لي تحب أساعدك بإيه؟"
+                _agentState.value = AgentState.Speaking(reply)
+                _lastSummary.value = reply
+                speechController.speak(reply, scope)
+                delay(1000)
+                _agentState.value = AgentState.Success(reply)
+                _isTaskRunning.value = false
+                logExecutionToDatabase(trimmed, 0, "CONVERSATION", reply)
+            } else {
+                val goal = classification.targetGoal ?: trimmed
+                runAgentLoop(goal)
+            }
         }
     }
 

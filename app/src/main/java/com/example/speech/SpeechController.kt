@@ -10,6 +10,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.*
 
 class SpeechController(private val context: Context) : TextToSpeech.OnInitListener {
 
@@ -118,17 +119,33 @@ class SpeechController(private val context: Context) : TextToSpeech.OnInitListen
         _isListening.value = false
     }
 
-    fun speak(text: String) {
-        if (!isTtsInitialized || text.isBlank()) return
+    private val elevenLabsApiClient = ElevenLabsApiClient(context)
+
+    fun speak(text: String, scope: CoroutineScope? = null) {
+        if (text.isBlank()) return
         stopListening()
         textToSpeech?.stop()
         _isSpeaking.value = true
 
-        val params = Bundle()
-        textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "YAMOSAED_UTTERANCE")
+        val activeScope = scope ?: CoroutineScope(Dispatchers.Main + SupervisorJob())
+        activeScope.launch {
+            val played = elevenLabsApiClient.synthesizeAndPlay(text)
+            if (!played) {
+                if (isTtsInitialized) {
+                    val params = Bundle()
+                    textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "YAMOSAED_UTTERANCE")
+                } else {
+                    _isSpeaking.value = false
+                }
+            } else {
+                delay(2000L.coerceAtLeast(text.length * 75L))
+                _isSpeaking.value = false
+            }
+        }
     }
 
     fun stopSpeaking() {
+        elevenLabsApiClient.stop()
         if (textToSpeech?.isSpeaking == true) {
             textToSpeech?.stop()
         }
