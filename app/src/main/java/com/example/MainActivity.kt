@@ -19,6 +19,10 @@ import com.example.data.AppDatabase
 import com.example.data.SettingsRepository
 import com.example.data.WeatherRepository
 import com.example.speech.SpeechController
+import com.example.ai.UnifiedAiClient
+import com.example.ai.local.LocalLlmClient
+import com.example.ai.local.ModelManager
+import com.example.ui.screens.LocalAiScreen
 import com.example.ui.screens.LogsScreen
 import com.example.ui.screens.MainAssistantScreen
 import com.example.ui.screens.PermissionsScreen
@@ -35,6 +39,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var database: AppDatabase
     private lateinit var weatherRepository: WeatherRepository
     private lateinit var geminiApiClient: GeminiApiClient
+    private lateinit var modelManager: ModelManager
+    private lateinit var localLlmClient: LocalLlmClient
+    private lateinit var unifiedAiClient: UnifiedAiClient
     private lateinit var speechController: SpeechController
     private lateinit var agentOrchestrator: AgentOrchestrator
 
@@ -67,13 +74,22 @@ class MainActivity : ComponentActivity() {
 
         speechController = SpeechController(applicationContext)
 
+        modelManager = ModelManager(applicationContext)
+        localLlmClient = LocalLlmClient(applicationContext, modelManager)
+        unifiedAiClient = UnifiedAiClient(
+            localLlmClient = localLlmClient,
+            cloudApiClient = geminiApiClient,
+            settingsRepository = settingsRepository
+        )
+
         agentOrchestrator = AgentOrchestrator(
             context = applicationContext,
             geminiApiClient = geminiApiClient,
             speechController = speechController,
             weatherRepository = weatherRepository,
             database = database,
-            settingsRepository = settingsRepository
+            settingsRepository = settingsRepository,
+            unifiedAiClient = unifiedAiClient
         )
 
         setContent {
@@ -96,7 +112,8 @@ class MainActivity : ComponentActivity() {
                                     onNavigateToSettings = { navController.navigate("settings") },
                                     onNavigateToTasks = { navController.navigate("tasks") },
                                     onNavigateToLogs = { navController.navigate("logs") },
-                                    onNavigateToPermissions = { navController.navigate("permissions") }
+                                    onNavigateToPermissions = { navController.navigate("permissions") },
+                                    onNavigateToLocalAi = { navController.navigate("local_ai") }
                                 )
                             }
 
@@ -104,6 +121,16 @@ class MainActivity : ComponentActivity() {
                                 SettingsScreen(
                                     settingsRepository = settingsRepository,
                                     geminiApiClient = geminiApiClient,
+                                    onBack = { navController.popBackStack() },
+                                    onNavigateToLocalAi = { navController.navigate("local_ai") }
+                                )
+                            }
+
+                            composable("local_ai") {
+                                LocalAiScreen(
+                                    settingsRepository = settingsRepository,
+                                    modelManager = modelManager,
+                                    localLlmClient = localLlmClient,
                                     onBack = { navController.popBackStack() }
                                 )
                             }
@@ -136,6 +163,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         speechController.destroy()
+        localLlmClient.close()
         super.onDestroy()
     }
 }

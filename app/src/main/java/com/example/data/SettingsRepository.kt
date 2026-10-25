@@ -21,6 +21,10 @@ class SettingsRepository(private val context: Context) {
         val WAKE_WORD_ENABLED = booleanPreferencesKey("wake_word_enabled")
         val HIGH_RISK_CONFIRMATION = booleanPreferencesKey("high_risk_confirmation")
         val DEFAULT_CITY = stringPreferencesKey("default_city")
+        val AI_INFERENCE_MODE = stringPreferencesKey("ai_inference_mode")
+        val LOCAL_MODEL_NAME = stringPreferencesKey("local_model_name")
+        val LOCAL_MODEL_PATH = stringPreferencesKey("local_model_path")
+        val LOCAL_CONTEXT_LENGTH = intPreferencesKey("local_context_length")
     }
 
     val apiKeyFlow: Flow<String> = context.dataStore.data.map { prefs ->
@@ -57,6 +61,22 @@ class SettingsRepository(private val context: Context) {
 
     val defaultCityFlow: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[DEFAULT_CITY] ?: "القاهرة"
+    }
+
+    val aiInferenceModeFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[AI_INFERENCE_MODE] ?: "automatic"
+    }
+
+    val localModelNameFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[LOCAL_MODEL_NAME] ?: "gemma-2b-it-cpu-int4.bin"
+    }
+
+    val localModelPathFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[LOCAL_MODEL_PATH] ?: ""
+    }
+
+    val localContextLengthFlow: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[LOCAL_CONTEXT_LENGTH] ?: 1024
     }
 
     suspend fun saveApiKey(key: String) {
@@ -110,6 +130,30 @@ class SettingsRepository(private val context: Context) {
     suspend fun setDefaultCity(city: String) {
         context.dataStore.edit { prefs ->
             prefs[DEFAULT_CITY] = city
+        }
+    }
+
+    suspend fun saveAiInferenceMode(mode: String) {
+        context.dataStore.edit { prefs ->
+            prefs[AI_INFERENCE_MODE] = mode.lowercase().trim()
+        }
+    }
+
+    suspend fun saveLocalModelName(name: String) {
+        context.dataStore.edit { prefs ->
+            prefs[LOCAL_MODEL_NAME] = name.trim()
+        }
+    }
+
+    suspend fun saveLocalModelPath(path: String) {
+        context.dataStore.edit { prefs ->
+            prefs[LOCAL_MODEL_PATH] = path.trim()
+        }
+    }
+
+    suspend fun saveLocalContextLength(length: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[LOCAL_CONTEXT_LENGTH] = length
         }
     }
 }

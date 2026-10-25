@@ -13,6 +13,7 @@ import com.example.accessibility.YaMosaedAccessibilityService
 import com.example.ai.GeminiApiClient
 import com.example.ai.IntentClassifier
 import com.example.ai.IntentType
+import com.example.ai.UnifiedAiClient
 import com.example.data.AgentLogEntity
 import com.example.data.AppDatabase
 import com.example.data.SettingsRepository
@@ -48,8 +49,17 @@ class AgentOrchestrator(
     private val speechController: SpeechController,
     private val weatherRepository: WeatherRepository,
     private val database: AppDatabase,
-    private val settingsRepository: SettingsRepository? = null
+    private val settingsRepository: SettingsRepository? = null,
+    val unifiedAiClient: UnifiedAiClient? = null
 ) {
+    val activeAiClient: UnifiedAiClient by lazy {
+        unifiedAiClient ?: UnifiedAiClient(
+            localLlmClient = com.example.ai.local.LocalLlmClient(context, com.example.ai.local.ModelManager(context)),
+            cloudApiClient = geminiApiClient,
+            settingsRepository = settingsRepository
+        )
+    }
+
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var currentTaskJob: Job? = null
 
@@ -134,7 +144,7 @@ class AgentOrchestrator(
             _currentStepIndex.value = 0
             _agentState.value = AgentState.Thinking
 
-            val intentClassifier = IntentClassifier(geminiApiClient)
+            val intentClassifier = IntentClassifier(activeAiClient)
             val classification = intentClassifier.classify(trimmed)
 
             if (classification.type == IntentType.CONVERSATION) {
@@ -210,7 +220,7 @@ class AgentOrchestrator(
             }
             promptBuilder.append("\nالخطوة الحالية رقم $stepCount من أصل $maxSteps.\nأعطني خطوتك القادمة JSON فقط:")
 
-            val responseResult = geminiApiClient.generateResponse(
+            val responseResult = activeAiClient.generateResponse(
                 prompt = promptBuilder.toString(),
                 systemInstruction = agentSystemPrompt,
                 jsonSchemaResponse = true,
@@ -218,7 +228,7 @@ class AgentOrchestrator(
             )
 
             val action = responseResult.fold(
-                onSuccess = { AgentAction.fromJson(it) },
+                onSuccess = { AgentAction.fromJson(it.text) },
                 onFailure = { null }
             )
 

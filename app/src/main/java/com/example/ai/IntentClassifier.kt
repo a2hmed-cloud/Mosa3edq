@@ -14,7 +14,12 @@ data class ClassificationResult(
     val suggestedTools: List<String> = emptyList()
 )
 
-class IntentClassifier(private val geminiApiClient: GeminiApiClient) {
+class IntentClassifier(
+    private val unifiedAiClient: UnifiedAiClient? = null,
+    private val geminiApiClient: GeminiApiClient? = null
+) {
+    constructor(geminiApiClient: GeminiApiClient) : this(null, geminiApiClient)
+    constructor(unifiedAiClient: UnifiedAiClient) : this(unifiedAiClient, null)
 
     private val systemPrompt = """
         أنت محرك تصنيف الأوامر والمحادثات للمساعد الذكي العربي المصري (يا مساعد / حمادة).
@@ -61,11 +66,19 @@ class IntentClassifier(private val geminiApiClient: GeminiApiClient) {
         }
 
         val prompt = "صنف هذا الطلب بصرامة: \"$trimmed\""
-        val response = geminiApiClient.generateResponse(
-            prompt = prompt,
-            systemInstruction = systemPrompt,
-            jsonSchemaResponse = true
-        )
+        val response = if (unifiedAiClient != null) {
+            unifiedAiClient.generateResponse(
+                prompt = prompt,
+                systemInstruction = systemPrompt,
+                jsonSchemaResponse = true
+            ).map { it.text }
+        } else {
+            geminiApiClient?.generateResponse(
+                prompt = prompt,
+                systemInstruction = systemPrompt,
+                jsonSchemaResponse = true
+            ) ?: Result.failure(IllegalStateException("No AI client available"))
+        }
 
         return response.fold(
             onSuccess = { jsonStr ->

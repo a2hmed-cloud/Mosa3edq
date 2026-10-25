@@ -42,7 +42,8 @@ fun MainAssistantScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToTasks: () -> Unit,
     onNavigateToLogs: () -> Unit,
-    onNavigateToPermissions: () -> Unit
+    onNavigateToPermissions: () -> Unit,
+    onNavigateToLocalAi: () -> Unit = {}
 ) {
     val agentState by orchestrator.agentState.collectAsState()
     val isListening by speechController.isListening.collectAsState()
@@ -176,6 +177,16 @@ fun MainAssistantScreen(
                             .background(NavySurface.copy(alpha = 0.85f))
                     ) {
                         Icon(Icons.Default.History, contentDescription = "السجل", tint = CyanPrimary, modifier = Modifier.size(18.dp))
+                    }
+
+                    IconButton(
+                        onClick = onNavigateToLocalAi,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(NavySurface.copy(alpha = 0.85f))
+                    ) {
+                        Icon(Icons.Default.Memory, contentDescription = "الذكاء الاصطناعي المحلي", tint = CyanPrimary, modifier = Modifier.size(18.dp))
                     }
 
                     IconButton(
