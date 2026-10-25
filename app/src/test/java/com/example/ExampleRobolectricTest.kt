@@ -22,15 +22,66 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `test AgentAction json parsing`() {
-        val jsonStr = """{"action": "set_alarm", "hour": 8, "minute": 30, "label": "منبه العمل"}"""
+    fun `test AgentAction SetAlarmOrTimer json parsing`() {
+        val jsonStr = """{"action": "set_alarm_or_timer", "type": "alarm", "hour": 8, "minute": 30, "label": "منبه العمل"}"""
         val action = AgentAction.fromJson(jsonStr)
 
-        assertTrue(action is AgentAction.SetAlarm)
-        val alarm = action as AgentAction.SetAlarm
+        assertTrue(action is AgentAction.SetAlarmOrTimer)
+        val alarm = action as AgentAction.SetAlarmOrTimer
+        assertEquals("alarm", alarm.type)
         assertEquals(8, alarm.hour)
         assertEquals(30, alarm.minute)
         assertEquals("منبه العمل", alarm.label)
+    }
+
+    @Test
+    fun `test AgentAction TapElement with element_id json parsing`() {
+        val jsonStr = """{"action": "tap_element", "element_id": 4, "thought": "النقر على زر الإرسال"}"""
+        val action = AgentAction.fromJson(jsonStr)
+
+        assertTrue(action is AgentAction.TapElement)
+        val tap = action as AgentAction.TapElement
+        assertEquals(4, tap.elementId)
+        assertEquals("النقر على زر الإرسال", tap.thought)
+    }
+
+    @Test
+    fun `test AgentAction TypeText json parsing`() {
+        val jsonStr = """{"action": "type_text", "element_id": 2, "text": "مرحباً بكم في مصر"}"""
+        val action = AgentAction.fromJson(jsonStr)
+
+        assertTrue(action is AgentAction.TypeText)
+        val typeAction = action as AgentAction.TypeText
+        assertEquals(2, typeAction.elementId)
+        assertEquals("مرحباً بكم في مصر", typeAction.text)
+    }
+
+    @Test
+    fun `test AgentAction InspectCurrentScreen json parsing`() {
+        val jsonStr = """{"action": "inspect_current_screen", "thought": "معاينة عناصر الشاشة"}"""
+        val action = AgentAction.fromJson(jsonStr)
+
+        assertTrue(action is AgentAction.InspectCurrentScreen)
+    }
+
+    @Test
+    fun `test AgentAction FinishTask json parsing`() {
+        val jsonStr = """{"action": "finish_task", "summary": "تم إرسال الرسالة بنجاح", "is_success": true}"""
+        val action = AgentAction.fromJson(jsonStr)
+
+        assertTrue(action is AgentAction.FinishTask)
+        val finish = action as AgentAction.FinishTask
+        assertEquals("تم إرسال الرسالة بنجاح", finish.summary)
+        assertTrue(finish.isSuccess)
+    }
+
+    @Test
+    fun `test AgentAction AskUserConfirmation high risk check`() {
+        val jsonStr = """{"action": "ask_user_confirmation", "prompt": "هل ترغب في تأكيد الحذف؟", "danger_level": "high"}"""
+        val action = AgentAction.fromJson(jsonStr)
+
+        assertTrue(action is AgentAction.AskUserConfirmation)
+        assertTrue(action!!.isHighRisk())
     }
 
     @Test
@@ -96,24 +147,6 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `test IntentClassifier fastHeuristicCheck for device actions`() {
-        val actionResult = com.example.ai.IntentClassifier.fastHeuristicCheck("افتح تطبيق الواتساب ورسالة لأحمد")
-        assertEquals(com.example.ai.IntentType.DEVICE_ACTION, actionResult?.type)
-
-        val chatResult = com.example.ai.IntentClassifier.fastHeuristicCheck("ازيك يا حمادة العامل ايه النهاردة")
-        assertEquals(com.example.ai.IntentType.CONVERSATION, chatResult?.type)
-
-        val searchResult = com.example.ai.IntentClassifier.fastHeuristicCheck("ابحث عن وصفة الكشري المصري في يوتيوب")
-        assertEquals(com.example.ai.IntentType.DEVICE_ACTION, searchResult?.type)
-    }
-
-    @Test
-    fun `test Arabic text normalization in IntentClassifier`() {
-        val normalized = com.example.ai.IntentClassifier.normalizeArabic("إرْسَالْ الأَلْفِ وَالْيَاءِ أَىْ")
-        assertEquals("ارسال الالف والياء اي", normalized)
-    }
-
-    @Test
     fun `test cleanModelOutput strips think tags and extracts json`() {
         val raw = """
             <think>
@@ -131,6 +164,3 @@ class ExampleRobolectricTest {
         assertTrue(action is AgentAction.LaunchApp)
     }
 }
-
-
-

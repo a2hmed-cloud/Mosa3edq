@@ -103,9 +103,10 @@ fun RobotFaceView(
         is AgentState.Thinking, is AgentState.Planning -> BlueAccent
         is AgentState.Executing, is AgentState.Observing -> CyanSecondary
         is AgentState.Verifying -> CyanPrimary
-        is AgentState.Completed, is AgentState.Success -> SuccessGreen
-        is AgentState.Annoyed -> WarningAmber
-        is AgentState.Failed, is AgentState.Error, is AgentState.PermissionRequired -> ErrorRed
+        is AgentState.WaitingApproval -> WarningAmber
+        is AgentState.Success -> SuccessGreen
+        is AgentState.Confused -> WarningAmber
+        is AgentState.Failed, is AgentState.Error -> ErrorRed
         else -> CyanPrimary
     }
 
@@ -143,7 +144,7 @@ fun RobotFaceView(
 
             val currentShiftY = when (agentState) {
                 is AgentState.Thinking -> -16f
-                is AgentState.Annoyed -> 12f
+                is AgentState.Confused -> 12f
                 else -> 0f
             }
 
@@ -158,9 +159,9 @@ fun RobotFaceView(
                     bottom = centerY + eyeBaseHeight / 2f + currentShiftY
                 )
 
-                // Annoyed or Puzzled slanted top edges
+                // Confused or Puzzled slanted top edges
                 val eyePath = Path().apply {
-                    if (agentState is AgentState.Annoyed) {
+                    if (agentState is AgentState.Confused) {
                         val isLeft = (i == 0)
                         val topLeftY = if (isLeft) eyeRect.top + 28f else eyeRect.top
                         val topRightY = if (isLeft) eyeRect.top else eyeRect.top + 28f
@@ -170,7 +171,7 @@ fun RobotFaceView(
                         lineTo(eyeRect.right, eyeRect.bottom)
                         lineTo(eyeRect.left, eyeRect.bottom)
                         close()
-                    } else if (agentState is AgentState.Completed || agentState is AgentState.Success) {
+                    } else if (agentState is AgentState.Success) {
                         addRoundRect(
                             RoundRect(
                                 rect = eyeRect,
@@ -268,8 +269,8 @@ fun RobotFaceView(
                     )
                 }
 
-                agentState is AgentState.Annoyed -> {
-                    // Downward disgruntled line
+                agentState is AgentState.Confused -> {
+                    // Downward disgruntled/puzzled line
                     mouthPath.moveTo(centerMouthX - 45.dp.toPx(), centerMouthY + 10.dp.toPx())
                     mouthPath.quadraticTo(
                         centerMouthX, centerMouthY - 8.dp.toPx(),
@@ -283,7 +284,7 @@ fun RobotFaceView(
                     )
                 }
 
-                agentState is AgentState.Completed || agentState is AgentState.Success -> {
+                agentState is AgentState.Success -> {
                     // Happy upward curved smile line
                     mouthPath.moveTo(centerMouthX - 50.dp.toPx(), centerMouthY - 6.dp.toPx())
                     mouthPath.quadraticTo(

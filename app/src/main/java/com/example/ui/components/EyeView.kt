@@ -17,11 +17,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.agent.AgentState
-import com.example.ui.theme.BlueAccent
-import com.example.ui.theme.CyanPrimary
-import com.example.ui.theme.CyanSecondary
-import com.example.ui.theme.ErrorRed
-import com.example.ui.theme.SuccessGreen
+import com.example.ui.theme.*
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -70,8 +66,9 @@ fun EyeView(
         is AgentState.Listening -> CyanPrimary
         is AgentState.Thinking, is AgentState.Planning -> BlueAccent
         is AgentState.Executing -> CyanSecondary
-        is AgentState.Completed -> SuccessGreen
-        is AgentState.Failed, is AgentState.PermissionRequired -> ErrorRed
+        is AgentState.Success -> SuccessGreen
+        is AgentState.Confused -> WarningAmber
+        is AgentState.Failed, is AgentState.Error -> ErrorRed
         else -> CyanPrimary
     }
 

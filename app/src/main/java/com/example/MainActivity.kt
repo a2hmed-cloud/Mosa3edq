@@ -72,7 +72,8 @@ class MainActivity : ComponentActivity() {
             geminiApiClient = geminiApiClient,
             speechController = speechController,
             weatherRepository = weatherRepository,
-            database = database
+            database = database,
+            settingsRepository = settingsRepository
         )
 
         setContent {
