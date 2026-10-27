@@ -205,25 +205,31 @@ class UnifiedAiClient(
         )
     }
 
-    private fun buildLocalPrompt(
-        prompt: String,
-        systemInstruction: String?,
-        jsonSchemaResponse: Boolean
-    ): String {
-        val sb = StringBuilder()
-        if (!systemInstruction.isNullOrBlank()) {
-            sb.append("<start_of_turn>user\n")
-            sb.append(systemInstruction).append("\n\n")
-            if (jsonSchemaResponse) {
-                sb.append("تنبيه: يجب أن يكون ردك بصيغة JSON فقط دون أي نصوص إضافية خارج الأقواس.\n\n")
+    companion object {
+        /**
+         * Formats prompt for Gemma / on-device LLMs adhering strictly to Gemma turn specifications:
+         * <start_of_turn>user\n{instruction}\n\n{prompt}<end_of_turn>\n<start_of_turn>model\n
+         */
+        fun buildLocalPrompt(
+            prompt: String,
+            systemInstruction: String? = null,
+            jsonSchemaResponse: Boolean = false
+        ): String {
+            val trimmed = prompt.trim()
+            if (trimmed.startsWith("<start_of_turn>")) {
+                return trimmed
             }
-            sb.append(prompt)
-            sb.append("<end_of_turn>\n<start_of_turn>model\n")
-        } else {
+            val sb = StringBuilder()
             sb.append("<start_of_turn>user\n")
-            sb.append(prompt)
+            if (!systemInstruction.isNullOrBlank()) {
+                sb.append(systemInstruction.trim()).append("\n\n")
+            }
+            if (jsonSchemaResponse) {
+                sb.append("تنبيه: أجب بتنسيق JSON حصراً بدون أي نصوص تمهيدية.\n\n")
+            }
+            sb.append(trimmed)
             sb.append("<end_of_turn>\n<start_of_turn>model\n")
+            return sb.toString()
         }
-        return sb.toString()
     }
 }

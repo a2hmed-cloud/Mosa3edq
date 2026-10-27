@@ -3,6 +3,7 @@ package com.example.ai
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.test.core.app.ApplicationProvider
+import com.example.agent.AgentAction
 import com.example.ai.local.LocalLlmClient
 import com.example.ai.local.LocalModelInfo
 import com.example.ai.local.ModelDownloadState
@@ -141,7 +142,12 @@ class UnifiedAiClientTest {
 
     @Test
     fun `test LocalModelInfo findById and available models`() {
-        assertEquals(4, LocalModelInfo.AVAILABLE_MODELS.size)
+        assertEquals(5, LocalModelInfo.AVAILABLE_MODELS.size)
+        val gemma2b = LocalModelInfo.findById("gemma-2b-it-cpu-int4")
+        assertEquals("Google Gemma 2B IT (INT4)", gemma2b.displayName)
+        assertTrue("Gemma 2B requires auth", gemma2b.requiresAuth)
+        assertEquals("gemma-2b-it-cpu-int4.bin", gemma2b.fileName)
+
         val qwen05 = LocalModelInfo.findById("qwen2.5-0.5b-instruct-litert")
         assertEquals("Qwen 2.5 0.5B Instruct (موصى به)", qwen05.displayName)
         assertFalse(qwen05.requiresAuth)
@@ -220,5 +226,72 @@ class UnifiedAiClientTest {
 
         val errorWithoutCode = ModelDownloadState.Error("Storage error")
         assertNull(errorWithoutCode.statusCode)
+    }
+
+    @Test
+    fun `test fitPromptToContext preserves Gemma turn tags`() {
+        val originalPrompt = "<start_of_turn>user\nافتح تطبيق الواتساب<end_of_turn>\n<start_of_turn>model\n"
+        val fitted = LocalLlmClient.fitPromptToContext(originalPrompt, 2048)
+        assertEquals(originalPrompt, fitted)
+
+        // Test very large content with Gemma tags
+        val hugeMiddle = "أ".repeat(4000)
+        val largePrompt = "<start_of_turn>user\n$hugeMiddle<end_of_turn>\n<start_of_turn>model\n"
+        val fittedLarge = LocalLlmClient.fitPromptToContext(largePrompt, 500)
+        assertTrue(fittedLarge.startsWith("<start_of_turn>user\n"))
+        assertTrue(fittedLarge.endsWith("<end_of_turn>\n<start_of_turn>model\n"))
+    }
+
+    @Test
+    fun `test buildLocalPrompt formats Gemma turn correctly without double tags`() {
+        val userPrompt = "عامل إيه يا حمادة؟"
+        val formatted = UnifiedAiClient.buildLocalPrompt(userPrompt)
+        assertTrue(formatted.startsWith("<start_of_turn>user\n"))
+        assertTrue(formatted.endsWith("<end_of_turn>\n<start_of_turn>model\n"))
+        assertTrue(formatted.contains(userPrompt))
+        // Verify not double wrapped
+        val userTagCount = Regex("<start_of_turn>user").findAll(formatted).count()
+        assertEquals(1, userTagCount)
+    }
+
+    @Test
+    fun `test ModelManager findInstalledModelFile discovers Gemma 2B binary`() {
+        val modelDir = modelManager.modelsDir
+        modelDir.mkdirs()
+        val gemmaFile = File(modelDir, "gemma-2b-it-cpu-int4.bin")
+        try {
+            gemmaFile.writeBytes(ByteArray(2048))
+            val detected = modelManager.findInstalledModelFile()
+            assertNotNull(detected)
+            assertEquals("gemma-2b-it-cpu-int4.bin", detected?.name)
+            assertTrue(modelManager.isModelInstalled())
+        } finally {
+            gemmaFile.delete()
+        }
+    }
+
+    @Test
+    fun `test AgentAction parseResponse converts plain text to ReplyToUser and parses JSON correctly`() {
+        // Natural language response from local model
+        val textResponse = "الحمد لله يا فندم، أنا جاهز لأي طلب."
+        val actionFromText = AgentAction.parseResponse(textResponse)
+        assertTrue(actionFromText is AgentAction.ReplyToUser)
+        assertEquals(textResponse, (actionFromText as AgentAction.ReplyToUser).message)
+
+        // JSON response
+        val jsonResponse = """{"action": "reply_to_user", "message": "أهلاً بك", "thought": "تحية"}"""
+        val actionFromJson = AgentAction.parseResponse(jsonResponse)
+        assertTrue(actionFromJson is AgentAction.ReplyToUser)
+        assertEquals("أهلاً بك", (actionFromJson as AgentAction.ReplyToUser).message)
+        assertEquals("تحية", actionFromJson.thought)
+    }
+
+    @Test
+    fun `test LocalLlmClient runStandaloneDiagnostic reports missing model gracefully`() = runBlocking {
+        modelManager.deleteModel()
+        val diag = localLlmClient.runStandaloneDiagnostic("LOCAL_OK")
+        assertFalse(diag.isSuccess)
+        assertTrue(diag.stageFailed?.contains("Stage 1") == true)
+        assertTrue(diag.errorMessage?.contains("ملف النموذج غير موجود") == true)
     }
 }

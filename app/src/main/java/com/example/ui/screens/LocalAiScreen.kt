@@ -73,6 +73,10 @@ fun LocalAiScreen(
     var testResultText by remember { mutableStateOf<String?>(null) }
     var isRunningTest by remember { mutableStateOf(false) }
 
+    // Standalone Diagnostic states
+    var isRunningDiagnostic by remember { mutableStateOf(false) }
+    var diagnosticResult by remember { mutableStateOf<LocalDiagnosticResult?>(null) }
+
     val isModelInstalled = remember(downloadState, currentSelectedModel) {
         modelManager.isModelInstalled(currentSelectedModel)
     }
@@ -800,6 +804,111 @@ fun LocalAiScreen(
                                 Text("رد النموذج المحلي (On-Device Output):", color = CyanPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(output, color = TextWhite, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Section 6B: Standalone Real Inference Diagnostic
+            Card(
+                colors = CardDefaults.cardColors(containerColor = NavySurface),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CyanPrimary.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth().testTag("diagnostic_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.BugReport, contentDescription = null, tint = CyanPrimary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("التشخيص الذاتي المباشر لمحرك LiteRT", color = TextWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Text(
+                        "يقوم هذا الاختبار بفحص ملف الأوزان الفعلي على القرص، وتهيئة مكتبة LiteRT الأصلية في الذاكرة، ثم إرسال أمر تجريبي مباشر (Reply with exactly: LOCAL_OK) بدون اتصال بالإنترنت لقياس الاستجابة الفعلية وكشف أي سبب للفشل بدقة.",
+                        color = TextMuted,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isRunningDiagnostic = true
+                                diagnosticResult = null
+                                val res = localLlmClient.runStandaloneDiagnostic("Reply with exactly: LOCAL_OK")
+                                diagnosticResult = res
+                                isRunningDiagnostic = false
+                            }
+                        },
+                        enabled = isModelInstalled && !isRunningDiagnostic,
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = NavyBackground),
+                        modifier = Modifier.fillMaxWidth().testTag("run_diagnostic_button")
+                    ) {
+                        if (isRunningDiagnostic) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = NavyBackground, strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("جاري فحص المحرك وتشغيل الأمر...")
+                        } else {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("تشغيل الفحص التشخيصي المباشر", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    diagnosticResult?.let { diag ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (diag.isSuccess) SuccessGreen.copy(alpha = 0.12f) else ErrorRed.copy(alpha = 0.12f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (diag.isSuccess) SuccessGreen else ErrorRed),
+                            modifier = Modifier.fillMaxWidth().testTag("diagnostic_result_view")
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (diag.isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
+                                        contentDescription = null,
+                                        tint = if (diag.isSuccess) SuccessGreen else ErrorRed,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (diag.isSuccess) "نجح التشخيص المباشر لمحرك LiteRT ✓" else "فشل التشخيص عند: ${diag.stageFailed}",
+                                        color = if (diag.isSuccess) SuccessGreen else ErrorRed,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Text("الملف المفحوص: ${diag.modelFileName} (${diag.modelFileSizeBytes / (1024 * 1024)} ميجابايت)", color = TextWhite, fontSize = 12.sp)
+                                if (diag.initDurationMs > 0) {
+                                    Text("زمن تهيئة المحرك بالذاكرة: ${diag.initDurationMs} مللي ثانية", color = TextMuted, fontSize = 11.sp)
+                                }
+                                if (diag.inferenceDurationMs > 0) {
+                                    Text("زمن معالجة الطلب وتوليد النص: ${diag.inferenceDurationMs} مللي ثانية", color = TextMuted, fontSize = 11.sp)
+                                }
+                                Text("إجمالي المدة: ${diag.totalDurationMs} مللي ثانية", color = TextMuted, fontSize = 11.sp)
+
+                                if (diag.isSuccess) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("مخرجات النموذج الفعلية (Raw Output):", color = CyanPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Surface(
+                                        color = NavyBackground,
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                                    ) {
+                                        Text(diag.cleanedOutput.ifBlank { diag.rawOutput }, color = TextWhite, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
+                                    }
+                                } else {
+                                    diag.errorMessage?.let { err ->
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("تفاصيل سبب الفشل:", color = ErrorRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text(err, color = TextWhite, fontSize = 12.sp)
+                                    }
+                                }
                             }
                         }
                     }

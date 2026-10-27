@@ -76,6 +76,24 @@ data class LocalModelInfo(
         )
 
         /**
+         * Google Gemma 2B Instruction (INT4): Officially supported Gemma 2B on-device model.
+         */
+        val GEMMA_2B_INT4 = LocalModelInfo(
+            id = "gemma-2b-it-cpu-int4",
+            displayName = "Google Gemma 2B IT (INT4)",
+            fileName = "gemma-2b-it-cpu-int4.bin",
+            downloadUrl = "https://huggingface.co/google/gemma-2b-it/resolve/main/gemma-2b-it-cpu-int4.bin",
+            sizeBytes = 1_350_000_000L,
+            formattedSize = "1.26 جيجابايت",
+            quantization = "4-bit (INT4)",
+            license = "Gemma Terms of Use (Gated)",
+            source = "Google AI",
+            recommendedRam = "3.0+ جيجابايت",
+            description = "نموذج Google Gemma 2B INT4 المخصص للمعالجة على الهاتف. يتطلب قبول ترخيص Gemma على Hugging Face وإدخال رمز الوصول HF Token.",
+            requiresAuth = true
+        )
+
+        /**
          * Google Gemma 3 1B IT: Gated model from Google that requires HF user login and license acceptance.
          */
         val GEMMA_3_1B = LocalModelInfo(
@@ -93,11 +111,16 @@ data class LocalModelInfo(
             requiresAuth = true
         )
 
-        val AVAILABLE_MODELS = listOf(QWEN_2_5_0_5B, QWEN_2_5_1_5B, SMOL_LM_135M, GEMMA_3_1B)
+        val AVAILABLE_MODELS = listOf(GEMMA_2B_INT4, QWEN_2_5_0_5B, QWEN_2_5_1_5B, SMOL_LM_135M, GEMMA_3_1B)
 
         val DEFAULT_MODEL = QWEN_2_5_0_5B
 
         fun findById(id: String): LocalModelInfo {
+            val lower = id.lowercase()
+            if (lower.contains("gemma-2b") || lower == "gemma-2b-it-cpu-int4") return GEMMA_2B_INT4
+            if (lower.contains("gemma3") || lower.contains("gemma-3")) return GEMMA_3_1B
+            if (lower.contains("qwen2.5-1.5b") || lower.contains("qwen-1.5b")) return QWEN_2_5_1_5B
+            if (lower.contains("smollm") || lower.contains("smol")) return SMOL_LM_135M
             return AVAILABLE_MODELS.firstOrNull { it.id.equals(id, ignoreCase = true) } ?: DEFAULT_MODEL
         }
     }

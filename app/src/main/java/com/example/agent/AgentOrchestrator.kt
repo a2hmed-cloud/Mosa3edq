@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.AlarmClock
@@ -138,27 +139,123 @@ class AgentOrchestrator(
         cancelCurrentTask()
 
         currentTaskJob = scope.launch {
+            Log.d("AgentOrchestrator", "[Stage 1] Chat UI received message: length=${trimmed.length}")
             _isTaskRunning.value = true
             _currentGoal.value = trimmed
             _liveSteps.value = emptyList()
             _currentStepIndex.value = 0
             _agentState.value = AgentState.Thinking
 
-            val intentClassifier = IntentClassifier(activeAiClient)
-            val classification = intentClassifier.classify(trimmed)
+            try {
+                // Stage 2: The selected AI provider is resolved
+                val mode = activeAiClient.getActiveMode()
+                Log.d("AgentOrchestrator", "[Stage 2] Selected AI provider resolved: mode=$mode")
 
-            if (classification.type == IntentType.CONVERSATION) {
-                val reply = classification.directReply ?: "أهلاً بيك! أنا معك، قول لي تحب أساعدك بإيه؟"
-                _agentState.value = AgentState.Speaking(reply)
-                _lastSummary.value = reply
-                speechController.speak(reply, scope)
-                delay(1000)
-                _agentState.value = AgentState.Success(reply)
+                if (mode == com.example.ai.AiInferenceMode.LOCAL) {
+                    // Stage 3: Local model state is checked
+                    Log.d("AgentOrchestrator", "[Stage 3] Local mode active. Checking local model installation...")
+                    val isInstalled = activeAiClient.localLlmClient.isModelAvailable()
+                    val installedFile = activeAiClient.localLlmClient.getInstalledModelFile()
+
+                    if (!isInstalled || installedFile == null) {
+                        val notInstalledMsg = "النموذج المحلي غير مثبت على جهازك. يرجى تحميله من شاشة الذكاء الاصطناعي المحلي."
+                        Log.w("AgentOrchestrator", "[Stage 3] Local model is NOT installed or file missing.")
+                        _agentState.value = AgentState.Failed(notInstalledMsg)
+                        _lastSummary.value = notInstalledMsg
+                        speechController.speak(notInstalledMsg, scope)
+                        return@launch
+                    }
+                    Log.d("AgentOrchestrator", "[Stage 3] Local model verified: ${installedFile.name} (${installedFile.length() / (1024 * 1024)} MB)")
+
+                    // Check for fast heuristic device actions first (e.g. open app, set alarm)
+                    val quickAction = IntentClassifier.fastHeuristicCheck(trimmed)
+                    if (quickAction != null && quickAction.type == IntentType.DEVICE_ACTION) {
+                        Log.d("AgentOrchestrator", "[LocalMode] Fast heuristic recognized device command. Executing agent loop...")
+                        runAgentLoop(trimmed)
+                        return@launch
+                    }
+
+                    // Stage 5: The prompt is formatted correctly for the actual Gemma model
+                    Log.d("AgentOrchestrator", "[Stage 5] Formatting Gemma prompt for direct on-device inference...")
+                    val gemmaPrompt = "<start_of_turn>user\n" +
+                        "أنت حمادة، المساعد الذكي للهاتف. أجب عن سؤال أو طلب المستخدم باختصار ومباشرة وبلهجة عربية مصرية مهذبة:\n" +
+                        trimmed +
+                        "<end_of_turn>\n<start_of_turn>model\n"
+
+                    // Stage 6: Inference starts on a background coroutine/executor with safety timeout
+                    Log.d("AgentOrchestrator", "[Stage 6] Starting local inference on background coroutine (timeout: 45s)...")
+                    val localResult = withTimeoutOrNull(45_000L) {
+                        activeAiClient.localLlmClient.generateResponse(gemmaPrompt, maxTokens = 512)
+                    }
+
+                    if (localResult == null) {
+                        val timeoutMsg = "استغرقت المعالجة على الهاتف وقتاً طويلاً (انتهت المهلة). يرجى المحاولة مرة أخرى."
+                        Log.w("AgentOrchestrator", "[Stage 9] Local inference timed out after 45s")
+                        _agentState.value = AgentState.Failed(timeoutMsg)
+                        _lastSummary.value = timeoutMsg
+                        speechController.speak(timeoutMsg, scope)
+                        return@launch
+                    }
+
+                    // Stage 7: Generated tokens or the final response are collected
+                    Log.d("AgentOrchestrator", "[Stage 7] Generated response collected from local runtime: isSuccess=${localResult.isSuccess}")
+
+                    localResult.fold(
+                        onSuccess = { rawAnswer ->
+                            val cleanAnswer = com.example.ai.local.LocalLlmClient.cleanLocalOutput(rawAnswer).trim()
+                            val finalAnswer = if (cleanAnswer.isNotBlank()) cleanAnswer else "أهلاً بك! أنا معك وسامعك."
+
+                            // Stage 8: The response is returned to the agent and displayed in chat
+                            Log.d("AgentOrchestrator", "[Stage 8] Returning response to chat UI: length=${finalAnswer.length}")
+                            _agentState.value = AgentState.Speaking(finalAnswer)
+                            _lastSummary.value = finalAnswer
+                            speechController.speak(finalAnswer, scope)
+                            delay(600)
+                            _agentState.value = AgentState.Success(finalAnswer)
+                            logExecutionToDatabase(trimmed, 1, "LOCAL_SUCCESS", finalAnswer)
+                        },
+                        onFailure = { error ->
+                            val errMsg = "فشل المعالج المحلي في توليد الرد: ${error.message}"
+                            Log.e("AgentOrchestrator", "[Stage 8] Local generation failed: $errMsg", error)
+                            _agentState.value = AgentState.Failed(errMsg)
+                            _lastSummary.value = errMsg
+                            speechController.speak(errMsg, scope)
+                            logExecutionToDatabase(trimmed, 0, "LOCAL_ERROR", errMsg)
+                        }
+                    )
+                } else {
+                    // Cloud / Automatic mode
+                    val intentClassifier = IntentClassifier(activeAiClient)
+                    val classification = intentClassifier.classify(trimmed)
+
+                    if (classification.type == IntentType.CONVERSATION) {
+                        val reply = classification.directReply ?: "أهلاً بيك! أنا معك، قول لي تحب أساعدك بإيه؟"
+                        Log.d("AgentOrchestrator", "[Stage 8] Displaying conversational reply: $reply")
+                        _agentState.value = AgentState.Speaking(reply)
+                        _lastSummary.value = reply
+                        speechController.speak(reply, scope)
+                        delay(1000)
+                        _agentState.value = AgentState.Success(reply)
+                        logExecutionToDatabase(trimmed, 0, "CONVERSATION", reply)
+                    } else {
+                        val goal = classification.targetGoal ?: trimmed
+                        runAgentLoop(goal)
+                    }
+                }
+            } catch (ce: CancellationException) {
+                Log.d("AgentOrchestrator", "[Stage 9] Current task was cancelled.")
+                _agentState.value = AgentState.Idle
+                throw ce
+            } catch (t: Throwable) {
+                val errMsg = "حدث خطأ أثناء معالجة الطلب: ${t.message ?: "خطأ غير متوقع"}"
+                Log.e("AgentOrchestrator", "[Stage 9] Task caught unhandled exception: $errMsg", t)
+                _agentState.value = AgentState.Failed(errMsg)
+                _lastSummary.value = errMsg
+                speechController.speak(errMsg, scope)
+            } finally {
+                // Stage 9: Loading state is cleared on success, failure, cancellation, or timeout
                 _isTaskRunning.value = false
-                logExecutionToDatabase(trimmed, 0, "CONVERSATION", reply)
-            } else {
-                val goal = classification.targetGoal ?: trimmed
-                runAgentLoop(goal)
+                Log.d("AgentOrchestrator", "[Stage 9] Loading state cleared successfully (isTaskRunning=false)")
             }
         }
     }
@@ -228,7 +325,7 @@ class AgentOrchestrator(
             )
 
             val action = responseResult.fold(
-                onSuccess = { AgentAction.fromJson(it.text) },
+                onSuccess = { AgentAction.parseResponse(it.text) },
                 onFailure = { null }
             )
 

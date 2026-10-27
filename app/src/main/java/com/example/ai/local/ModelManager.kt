@@ -55,21 +55,74 @@ class ModelManager(
     }
 
     init {
-        refreshStatus(LocalModelInfo.DEFAULT_MODEL)
+        refreshStatus()
     }
 
-    fun getModelFile(modelInfo: LocalModelInfo = LocalModelInfo.DEFAULT_MODEL): File {
-        return File(modelsDir, modelInfo.fileName)
+    /**
+     * Scans the models directory for any installed, valid model weights files.
+     */
+    fun getInstalledModelFiles(): List<File> {
+        val files = modelsDir.listFiles() ?: return emptyList()
+        return files.filter { it.isFile && it.length() > 1024L && !it.name.endsWith(".downloading") }
     }
 
-    fun isModelInstalled(modelInfo: LocalModelInfo = LocalModelInfo.DEFAULT_MODEL): Boolean {
-        val file = getModelFile(modelInfo)
-        // Must exist and be larger than 50MB (lite models are at least 150MB)
-        return file.exists() && file.length() > 50_000_000L
+    /**
+     * Intelligently resolves an installed model file on the device.
+     * Prioritizes the requested model if installed, then checks for any installed Gemma or Qwen model.
+     */
+    fun findInstalledModelFile(preferredModel: LocalModelInfo? = null): File? {
+        val installed = getInstalledModelFiles()
+        if (installed.isEmpty()) return null
+
+        if (preferredModel != null) {
+            val exact = File(modelsDir, preferredModel.fileName)
+            if (exact.exists() && exact.length() > 1024L) {
+                return exact
+            }
+
+            // Also check by family name (e.g. user downloaded gemma-2b as .bin or .task)
+            if (preferredModel.id.contains("gemma", ignoreCase = true) || preferredModel.fileName.contains("gemma", ignoreCase = true)) {
+                val gemmaCandidate = installed.firstOrNull { it.name.contains("gemma", ignoreCase = true) }
+                if (gemmaCandidate != null) return gemmaCandidate
+            }
+        }
+
+        // Check for any Gemma model first (Gemma 2B INT4 or Gemma 3)
+        val gemmaFile = installed.firstOrNull { it.name.contains("gemma", ignoreCase = true) }
+        if (gemmaFile != null) return gemmaFile
+
+        // Check for Qwen model
+        val qwenFile = installed.firstOrNull { it.name.contains("qwen", ignoreCase = true) }
+        if (qwenFile != null) return qwenFile
+
+        // Return the most recently updated valid model file
+        return installed.maxByOrNull { it.lastModified() }
     }
 
-    fun refreshStatus(modelInfo: LocalModelInfo = LocalModelInfo.DEFAULT_MODEL) {
-        val file = getModelFile(modelInfo)
+    fun getModelFile(modelInfo: LocalModelInfo? = null): File {
+        val installed = findInstalledModelFile(modelInfo)
+        if (installed != null) return installed
+
+        val fallbackName = (modelInfo ?: LocalModelInfo.DEFAULT_MODEL).fileName
+        return File(modelsDir, fallbackName)
+    }
+
+    fun isModelInstalled(modelInfo: LocalModelInfo? = null): Boolean {
+        if (modelInfo != null) {
+            val exact = File(modelsDir, modelInfo.fileName)
+            if (exact.exists() && exact.length() > 1024L) return true
+
+            // If checking a Gemma model, consider any valid installed Gemma file as installed
+            if (modelInfo.id.contains("gemma", ignoreCase = true)) {
+                return getInstalledModelFiles().any { it.name.contains("gemma", ignoreCase = true) }
+            }
+            return false
+        }
+        return getInstalledModelFiles().isNotEmpty()
+    }
+
+    fun refreshStatus(modelInfo: LocalModelInfo? = null) {
+        val file = findInstalledModelFile(modelInfo) ?: getModelFile(modelInfo)
         if (isModelInstalled(modelInfo)) {
             _downloadState.value = ModelDownloadState.Ready(file, file.length())
         } else {

@@ -264,5 +264,22 @@ sealed class AgentAction {
                 null
             }
         }
+
+        /**
+         * Parses model output into an AgentAction. If the model responded in natural language
+         * instead of tool JSON (common for on-device LLMs), this wraps it into a ReplyToUser
+         * action rather than dropping the response.
+         */
+        fun parseResponse(rawText: String, fallbackThought: String = "الرد المباشر"): AgentAction {
+            val jsonAction = fromJson(rawText)
+            if (jsonAction != null) return jsonAction
+
+            val cleaned = GeminiApiClient.cleanModelOutput(rawText)
+            return if (cleaned.isNotBlank()) {
+                ReplyToUser(message = cleaned, thought = fallbackThought)
+            } else {
+                ReplyToUser(message = "تمام، أنا معاك وسامعك.", thought = fallbackThought)
+            }
+        }
     }
 }
