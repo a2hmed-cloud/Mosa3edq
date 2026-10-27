@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ai.AiInferenceMode
@@ -40,6 +42,23 @@ fun LocalAiScreen(
     val currentModeStr by settingsRepository.aiInferenceModeFlow.collectAsState(initial = "automatic")
     val selectedMode = AiInferenceMode.fromId(currentModeStr)
 
+    val selectedModelId by settingsRepository.selectedLocalModelIdFlow.collectAsState(initial = LocalModelInfo.DEFAULT_MODEL.id)
+    val currentSelectedModel = remember(selectedModelId) { LocalModelInfo.findById(selectedModelId) }
+
+    val hfTokenStored by settingsRepository.huggingFaceTokenFlow.collectAsState(initial = "")
+    var tokenInput by remember { mutableStateOf("") }
+    var isTokenVisible by remember { mutableStateOf(false) }
+    var tokenSavedMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(hfTokenStored) {
+        tokenInput = hfTokenStored
+    }
+
+    // Refresh model status when selected model changes
+    LaunchedEffect(currentSelectedModel) {
+        modelManager.refreshStatus(currentSelectedModel)
+    }
+
     val downloadState by modelManager.downloadState.collectAsState()
     val engineState by localLlmClient.engineState.collectAsState()
     val metrics by localLlmClient.metrics.collectAsState()
@@ -54,7 +73,9 @@ fun LocalAiScreen(
     var testResultText by remember { mutableStateOf<String?>(null) }
     var isRunningTest by remember { mutableStateOf(false) }
 
-    val isModelInstalled = modelManager.isModelInstalled()
+    val isModelInstalled = remember(downloadState, currentSelectedModel) {
+        modelManager.isModelInstalled(currentSelectedModel)
+    }
     val availableStorageStr = remember(downloadState) { modelManager.getFormattedAvailableStorage() }
 
     Scaffold(
@@ -164,8 +185,251 @@ fun LocalAiScreen(
                 }
             }
 
-            // Section 2: Model Information & Download Manager
-            val modelInfo = LocalModelInfo.DEFAULT_MODEL
+            // Section 2: Model Picker Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = NavySurface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Architecture, contentDescription = null, tint = CyanPrimary, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("اختيار النموذج المحلي (LiteRT Models)", color = TextWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Text(
+                        "اختر النموذج المناسب لإمكانيات هاتفك. النماذج العامة (Apache 2.0) لا تتطلب أي تسجيل أو توكن ويمكن تنزيلها مباشرة.",
+                        color = TextMuted,
+                        fontSize = 12.sp
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LocalModelInfo.AVAILABLE_MODELS.forEach { model ->
+                            val isSelected = model.id == currentSelectedModel.id
+                            val isThisInstalled = modelManager.isModelInstalled(model)
+
+                            Surface(
+                                onClick = {
+                                    if (!isSelected) {
+                                        scope.launch {
+                                            settingsRepository.saveSelectedLocalModelId(model.id)
+                                            modelManager.refreshStatus(model)
+                                        }
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) CyanPrimary.copy(alpha = 0.12f) else NavyBackground.copy(alpha = 0.6f),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSelected) CyanPrimary else NavyCard
+                                ),
+                                modifier = Modifier.fillMaxWidth().testTag("select_model_${model.id}")
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                            RadioButton(
+                                                selected = isSelected,
+                                                onClick = {
+                                                    scope.launch {
+                                                        settingsRepository.saveSelectedLocalModelId(model.id)
+                                                        modelManager.refreshStatus(model)
+                                                    }
+                                                },
+                                                colors = RadioButtonDefaults.colors(selectedColor = CyanPrimary)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Column {
+                                                Text(
+                                                    text = model.displayName,
+                                                    color = if (isSelected) CyanPrimary else TextWhite,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    text = "${model.formattedSize} • ${model.quantization} • ${model.license}",
+                                                    color = TextMuted,
+                                                    fontSize = 11.sp
+                                                )
+                                            }
+                                        }
+
+                                        // Badges
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            if (isThisInstalled) {
+                                                Surface(
+                                                    color = SuccessGreen.copy(alpha = 0.2f),
+                                                    shape = RoundedCornerShape(6.dp)
+                                                ) {
+                                                    Text(
+                                                        "مثبت",
+                                                        color = SuccessGreen,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                            if (model.requiresAuth) {
+                                                Surface(
+                                                    color = WarningAmber.copy(alpha = 0.2f),
+                                                    shape = RoundedCornerShape(6.dp)
+                                                ) {
+                                                    Text(
+                                                        "توكن HF",
+                                                        color = WarningAmber,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            } else {
+                                                Surface(
+                                                    color = CyanPrimary.copy(alpha = 0.2f),
+                                                    shape = RoundedCornerShape(6.dp)
+                                                ) {
+                                                    Text(
+                                                        "عام ومجاني",
+                                                        color = CyanPrimary,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (isSelected) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = model.description,
+                                            color = TextMuted,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier.padding(start = 36.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Section 3: Hugging Face Token (Optional / Required for Gated Models)
+            AnimatedVisibility(
+                visible = currentSelectedModel.requiresAuth || tokenInput.isNotEmpty() || hfTokenStored.isNotEmpty(),
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = NavySurface),
+                    shape = RoundedCornerShape(16.dp),
+                    border = if (currentSelectedModel.requiresAuth && tokenInput.isEmpty()) {
+                        androidx.compose.foundation.BorderStroke(1.dp, WarningAmber)
+                    } else null,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Key, contentDescription = null, tint = if (currentSelectedModel.requiresAuth) WarningAmber else CyanPrimary, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (currentSelectedModel.requiresAuth) "رمز الوصول Hugging Face Token (مطلوب لـ Gemma)" else "رمز Hugging Face (اختياري)",
+                                color = TextWhite,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Text(
+                            text = "نماذج Google Gemma هي نماذج مقيدة (Gated) تتطلب قبول الترخيص على huggingface.co ثم إدخال User Access Token (نوع Read). النماذج العامة مثل Qwen لا تتطلب هذا الرمز.",
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
+
+                        OutlinedTextField(
+                            value = tokenInput,
+                            onValueChange = {
+                                tokenInput = it
+                                tokenSavedMessage = null
+                            },
+                            label = { Text("HF Access Token (hf_...)") },
+                            placeholder = { Text("hf_xxxxxxxxxxxxxxxxxxxx") },
+                            visualTransformation = if (isTokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { isTokenVisible = !isTokenVisible }) {
+                                    Icon(
+                                        imageVector = if (isTokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = "إظهار/إخفاء الرمز",
+                                        tint = TextMuted
+                                    )
+                                }
+                            },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = NavyCard,
+                                focusedTextColor = TextWhite,
+                                unfocusedTextColor = TextWhite
+                            ),
+                            modifier = Modifier.fillMaxWidth().testTag("hf_token_input")
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            tokenSavedMessage?.let { msg ->
+                                Text(msg, color = SuccessGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            } ?: Spacer(modifier = Modifier.width(1.dp))
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (tokenInput.isNotEmpty()) {
+                                    TextButton(
+                                        onClick = {
+                                            tokenInput = ""
+                                            scope.launch {
+                                                settingsRepository.saveHuggingFaceToken("")
+                                                tokenSavedMessage = "تم مسح الرمز"
+                                            }
+                                        }
+                                    ) {
+                                        Text("مسح", color = ErrorRed, fontSize = 12.sp)
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            settingsRepository.saveHuggingFaceToken(tokenInput.trim())
+                                            tokenSavedMessage = "تم حفظ الرمز بنجاح ✓"
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = NavyBackground)
+                                ) {
+                                    Text("حفظ الرمز", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Section 4: Model Status & Download Manager
+            val modelInfo = currentSelectedModel
             Card(
                 colors = CardDefaults.cardColors(containerColor = NavySurface),
                 shape = RoundedCornerShape(16.dp),
@@ -183,7 +447,7 @@ fun LocalAiScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Memory, contentDescription = null, tint = CyanPrimary, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("النموذج المحلي المدمج", color = TextWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Text("النموذج النشط حالياً", color = TextWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         }
 
                         // Installation Status Badge
@@ -200,7 +464,7 @@ fun LocalAiScreen(
                                 text = when (downloadState) {
                                     is ModelDownloadState.Ready -> "جاهز ومثبت ✓"
                                     is ModelDownloadState.Downloading -> "جاري التحميل..."
-                                    is ModelDownloadState.Verifying -> "جاري التحقق..."
+                                    is ModelDownloadState.Verifying -> "جاري التحقق والتشغيل..."
                                     is ModelDownloadState.Error -> "فشل التحميل"
                                     is ModelDownloadState.Idle -> if (isModelInstalled) "جاهز ومثبت ✓" else "غير محمل"
                                 },
@@ -218,27 +482,21 @@ fun LocalAiScreen(
                     }
 
                     Text(
-                        text = "${modelInfo.displayName} — معمارية Google LiteRT-LM",
+                        text = "${modelInfo.displayName} — LiteRT",
                         color = TextWhite,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
 
-                    Text(
-                        text = modelInfo.description,
-                        color = TextMuted,
-                        fontSize = 12.sp
-                    )
-
                     // Specs Grid
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("الكمية والحجم:", color = TextMuted, fontSize = 12.sp)
-                            Text("${modelInfo.quantization} (${modelInfo.formattedSize})", color = TextWhite, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("الحجم والكمية:", color = TextMuted, fontSize = 12.sp)
+                            Text("${modelInfo.formattedSize} (${modelInfo.quantization})", color = TextWhite, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("المصدر والترخيص:", color = TextMuted, fontSize = 12.sp)
-                            Text("${modelInfo.source} (${modelInfo.license})", color = TextWhite, fontSize = 12.sp)
+                            Text("${modelInfo.source} • ${modelInfo.license}", color = TextWhite, fontSize = 12.sp)
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("الذاكرة الموصى بها (RAM):", color = TextMuted, fontSize = 12.sp)
@@ -257,7 +515,7 @@ fun LocalAiScreen(
                         val dl = downloadState as ModelDownloadState.Downloading
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("جاري تنزيل أوزان النموذج...", color = CyanPrimary, fontSize = 12.sp)
+                                Text("جاري تنزيل أوزان النموذج من المصدر الرسمي...", color = CyanPrimary, fontSize = 12.sp)
                                 Text("${dl.progressPercent}%", color = CyanPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
 
@@ -279,7 +537,7 @@ fun LocalAiScreen(
                                 onClick = {
                                     downloadJob?.cancel()
                                     downloadJob = null
-                                    modelManager.refreshStatus()
+                                    modelManager.refreshStatus(modelInfo)
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = ErrorRed, contentColor = TextWhite),
                                 modifier = Modifier.align(Alignment.End)
@@ -291,10 +549,10 @@ fun LocalAiScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = CyanPrimary, strokeWidth = 2.dp)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("جاري التحقق من سلامة ملف النموذج...", color = CyanPrimary, fontSize = 12.sp)
+                            Text("جاري فحص بصمة SHA-256 وتهيئة المحرك في الذاكرة...", color = CyanPrimary, fontSize = 12.sp)
                         }
                     } else if (isModelInstalled) {
-                        // Model is installed -> Options to re-check or delete
+                        // Model is installed
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -302,7 +560,7 @@ fun LocalAiScreen(
                             OutlinedButton(
                                 onClick = {
                                     scope.launch {
-                                        localLlmClient.initialize()
+                                        localLlmClient.initialize(modelInfo = modelInfo)
                                     }
                                 },
                                 modifier = Modifier.weight(1f),
@@ -336,19 +594,58 @@ fun LocalAiScreen(
                         }
                     }
 
+                    // Detailed Diagnostic Error Card
                     if (downloadState is ModelDownloadState.Error) {
-                        val error = (downloadState as ModelDownloadState.Error).message
-                        Text(
-                            text = error,
-                            color = ErrorRed,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        val errorState = downloadState as ModelDownloadState.Error
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = ErrorRed.copy(alpha = 0.12f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, ErrorRed.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth().testTag("download_error_card")
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (errorState.statusCode != null) "خطأ في التنزيل (HTTP ${errorState.statusCode})" else "خطأ في التنزيل",
+                                        color = ErrorRed,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Text(
+                                    text = errorState.message,
+                                    color = TextWhite,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+
+                                // Fast-fix action button: If 401/403 or gated model failed, offer to switch to Qwen 2.5
+                                if (errorState.statusCode == 401 || errorState.statusCode == 403 || modelInfo.requiresAuth) {
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                settingsRepository.saveSelectedLocalModelId(LocalModelInfo.QWEN_2_5_0_5B.id)
+                                                modelManager.refreshStatus(LocalModelInfo.QWEN_2_5_0_5B)
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = NavyBackground),
+                                        modifier = Modifier.fillMaxWidth().testTag("switch_to_qwen_button")
+                                    ) {
+                                        Icon(Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("التبديل إلى Qwen 2.5 0.5B (عام ومجاني دون توكن)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            // Section 3: Engine State & Hardware Benchmark Metrics
+            // Section 5: Engine State & Hardware Benchmark Metrics
             Card(
                 colors = CardDefaults.cardColors(containerColor = NavySurface),
                 shape = RoundedCornerShape(16.dp),
@@ -427,7 +724,7 @@ fun LocalAiScreen(
                 }
             }
 
-            // Section 4: Offline Prompt Live Test
+            // Section 6: Offline Prompt Live Test
             Card(
                 colors = CardDefaults.cardColors(containerColor = NavySurface),
                 shape = RoundedCornerShape(16.dp),
@@ -438,7 +735,7 @@ fun LocalAiScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Chat, contentDescription = null, tint = CyanPrimary, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.QuestionAnswer, contentDescription = null, tint = CyanPrimary, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("اختبار الذكاء الاصطناعي دون إنترنت", color = TextWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                     }
@@ -509,7 +806,7 @@ fun LocalAiScreen(
                 }
             }
 
-            // Section 5: Offline Privacy & Limitations Banner
+            // Section 7: Offline Privacy & Limitations Banner
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = CyanPrimary.copy(alpha = 0.08f),
@@ -544,8 +841,9 @@ fun LocalAiScreen(
         }
     }
 
-    // Confirmation Dialog for Downloading 1.26 GB Model
+    // Confirmation Dialog for Downloading Selected Model
     if (showDownloadConfirmation) {
+        val modelToDownload = currentSelectedModel
         AlertDialog(
             onDismissRequest = { showDownloadConfirmation = false },
             containerColor = NavySurface,
@@ -557,18 +855,43 @@ fun LocalAiScreen(
                 }
             },
             text = {
-                Text(
-                    text = "سيتم تنزيل نموذج Gemma 2B INT4 بحجم ${LocalModelInfo.DEFAULT_MODEL.formattedSize}.\n\nيُوصى بالاتصال بشبكة Wi-Fi قبل البدء لضمان استقرار التحميل وتوفير باقة الهاتف.",
-                    color = TextMuted,
-                    fontSize = 13.sp
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "سيتم تنزيل ${modelToDownload.displayName} بحجم ${modelToDownload.formattedSize}.",
+                        color = TextWhite,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (modelToDownload.requiresAuth) {
+                        Text(
+                            text = "تنبيه: هذا النموذج مقيد ويتطلب رمز الوصول Hugging Face Token المصرح له بترخيص النموذج.",
+                            color = WarningAmber,
+                            fontSize = 12.sp
+                        )
+                    }
+                    Text(
+                        text = "يُوصى بالاتصال بشبكة Wi-Fi قبل البدء لضمان استقرار التحميل وتوفير باقة الهاتف.",
+                        color = TextMuted,
+                        fontSize = 12.sp
+                    )
+                }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         showDownloadConfirmation = false
                         downloadJob = scope.launch {
-                            modelManager.downloadModel()
+                            val token = if (modelToDownload.requiresAuth) {
+                                tokenInput.trim().ifEmpty { hfTokenStored.trim() }.ifEmpty { null }
+                            } else null
+
+                            modelManager.downloadModel(
+                                modelInfo = modelToDownload,
+                                authToken = token,
+                                onVerifyCallback = { downloadedFile ->
+                                    localLlmClient.verifyAndWarmup(downloadedFile).map { Unit }
+                                }
+                            )
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = NavyBackground)
@@ -589,6 +912,7 @@ fun LocalAiScreen(
 
     // Confirmation Dialog for Deleting Model
     if (showDeleteConfirmation) {
+        val modelToDelete = currentSelectedModel
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
             containerColor = NavySurface,
@@ -597,7 +921,7 @@ fun LocalAiScreen(
             },
             text = {
                 Text(
-                    text = "هل أنت متأكد من رغبتك في حذف ملف النموذج من الهاتف؟ سيؤدي ذلك لتحرير ${LocalModelInfo.DEFAULT_MODEL.formattedSize} من مساحة التخزين، ويمكنك إعادة تحميله في أي وقت.",
+                    text = "هل أنت متأكد من رغبتك في حذف ملف ${modelToDelete.displayName} من الهاتف؟ سيؤدي ذلك لتحرير ${modelToDelete.formattedSize} من مساحة التخزين، ويمكنك إعادة تحميله في أي وقت.",
                     color = TextMuted,
                     fontSize = 13.sp
                 )
@@ -607,7 +931,7 @@ fun LocalAiScreen(
                     onClick = {
                         showDeleteConfirmation = false
                         localLlmClient.close()
-                        modelManager.deleteModel()
+                        modelManager.deleteModel(modelToDelete)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = ErrorRed, contentColor = TextWhite)
                 ) {

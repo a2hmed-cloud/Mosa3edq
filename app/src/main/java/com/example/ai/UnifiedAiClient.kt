@@ -61,7 +61,7 @@ class UnifiedAiClient(
                         Result.success(
                             UnifiedAiResponse(
                                 text = generatedText,
-                                providerUsed = "Local (LiteRT-LM / Gemma 2B)",
+                                providerUsed = "Local (${localLlmClient.loadedModelName ?: "LiteRT-LM"})",
                                 isLocal = true,
                                 executionTimeMs = duration,
                                 wasFallback = false
@@ -132,7 +132,7 @@ class UnifiedAiClient(
                         return@withContext Result.success(
                             UnifiedAiResponse(
                                 text = localResult.getOrThrow(),
-                                providerUsed = "Local (LiteRT-LM / Gemma 2B)",
+                                providerUsed = "Local (${localLlmClient.loadedModelName ?: "LiteRT-LM"})",
                                 isLocal = true,
                                 executionTimeMs = localDuration,
                                 wasFallback = false

@@ -25,6 +25,8 @@ class SettingsRepository(private val context: Context) {
         val LOCAL_MODEL_NAME = stringPreferencesKey("local_model_name")
         val LOCAL_MODEL_PATH = stringPreferencesKey("local_model_path")
         val LOCAL_CONTEXT_LENGTH = intPreferencesKey("local_context_length")
+        val HUGGINGFACE_TOKEN = stringPreferencesKey("huggingface_token")
+        val SELECTED_LOCAL_MODEL_ID = stringPreferencesKey("selected_local_model_id")
     }
 
     val apiKeyFlow: Flow<String> = context.dataStore.data.map { prefs ->
@@ -77,6 +79,14 @@ class SettingsRepository(private val context: Context) {
 
     val localContextLengthFlow: Flow<Int> = context.dataStore.data.map { prefs ->
         prefs[LOCAL_CONTEXT_LENGTH] ?: 1024
+    }
+
+    val huggingFaceTokenFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[HUGGINGFACE_TOKEN] ?: ""
+    }
+
+    val selectedLocalModelIdFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[SELECTED_LOCAL_MODEL_ID] ?: "qwen2.5-0.5b-instruct-litert"
     }
 
     suspend fun saveApiKey(key: String) {
@@ -154,6 +164,18 @@ class SettingsRepository(private val context: Context) {
     suspend fun saveLocalContextLength(length: Int) {
         context.dataStore.edit { prefs ->
             prefs[LOCAL_CONTEXT_LENGTH] = length
+        }
+    }
+
+    suspend fun saveHuggingFaceToken(token: String) {
+        context.dataStore.edit { prefs ->
+            prefs[HUGGINGFACE_TOKEN] = token.trim()
+        }
+    }
+
+    suspend fun saveSelectedLocalModelId(id: String) {
+        context.dataStore.edit { prefs ->
+            prefs[SELECTED_LOCAL_MODEL_ID] = id.trim()
         }
     }
 }

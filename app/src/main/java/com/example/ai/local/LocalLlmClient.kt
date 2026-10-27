@@ -41,13 +41,18 @@ class LocalLlmClient(
 
     private var llmInference: LlmInference? = null
     private var loadedModelFile: File? = null
+    val loadedModelName: String? get() = loadedModelFile?.name
     private val inferenceMutex = Mutex()
 
     /**
      * Checks if a local model is installed and ready to be initialized or used.
      */
-    fun isModelAvailable(): Boolean {
-        return modelManager.isModelInstalled()
+    fun isModelAvailable(modelInfo: LocalModelInfo? = null): Boolean {
+        return if (modelInfo != null) {
+            modelManager.isModelInstalled(modelInfo)
+        } else {
+            modelManager.isModelInstalled()
+        }
     }
 
     /**
@@ -56,12 +61,13 @@ class LocalLlmClient(
      */
     suspend fun initialize(
         modelFileOverride: File? = null,
+        modelInfo: LocalModelInfo? = null,
         maxTokens: Int = 1024,
         topK: Int = 40,
         temperature: Float = 0.7f
     ): Result<Unit> = withContext(Dispatchers.Default) {
         inferenceMutex.withLock {
-            val targetFile = modelFileOverride ?: modelManager.getModelFile()
+            val targetFile = modelFileOverride ?: (if (modelInfo != null) modelManager.getModelFile(modelInfo) else modelManager.getModelFile())
 
             if (!targetFile.exists() || targetFile.length() < 10_000_000L) {
                 val err = "ملف النموذج المحلي غير متوفر. يرجى تحميله أولاً من شاشة إعدادات الذكاء الاصطناعي."
@@ -117,6 +123,18 @@ class LocalLlmClient(
                 Result.failure(e)
             }
         }
+    }
+
+    /**
+     * Verifies that the model file can be loaded by LiteRT and can generate text successfully.
+     */
+    suspend fun verifyAndWarmup(modelFileOverride: File? = null): Result<String> = withContext(Dispatchers.Default) {
+        val targetFile = modelFileOverride ?: modelManager.getModelFile()
+        val initResult = initialize(modelFileOverride = targetFile)
+        if (initResult.isFailure) {
+            return@withContext Result.failure(initResult.exceptionOrNull() ?: Exception("فشل تهيئة المحرك"))
+        }
+        generateResponse("مرحبا", maxTokens = 16)
     }
 
     /**
